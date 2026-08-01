@@ -1,0 +1,33 @@
+# Config for the deployed inference pipeline (Step 7 of the build plan).
+#
+# Deliberately separate from configs/eval.yaml: eval.yaml's splits hold out
+# entire genera to *measure* zero-shot generalization, whereas the deployed
+# dashboard should exploit every known genus -- it splits off a small,
+# random (non-clade-excluded) validation slice purely to calibrate
+# HierarchicalFallback's novelty thresholds, then fits on everything else.
+# encoder/classifier/fallback values mirror eval.yaml's tuned defaults.
+
+data:
+  sequences_path: data/processed/sequences.parquet
+
+# Fraction of rows held back (uniformly at random, not by clade) to
+# calibrate HierarchicalFallback's per-rank confidence thresholds.
+val_fraction: 0.15
+seed: 42
+
+encoder:
+  k: 4
+  n_components: 50
+  random_state: 42
+
+classifier:
+  seq_weight: 0.8
+  geo_weight: 0.2
+
+fallback:
+  rank_percentile: 90.0
+
+# Written by src/eval/benchmark.py; the dashboard's Benchmark tab reads
+# this to render the Step 6 comparison results (shows a "run benchmark
+# first" message if missing).
+benchmark_results_path: data/eval_results/benchmark.json

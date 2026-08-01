@@ -17,12 +17,27 @@ jobs:
       - name: Build main image (ingest/preprocess)
         run: docker build -t edna-classifier:ci .
 
-      # Dockerfile.inference is intentionally a stub (no FROM instruction)
-      # until the dashboard (Step 7) exists -- building it now would only
-      # produce a misleading failure, not a useful signal. Re-enable this
-      # step once Dockerfile.inference has real content.
-      # - name: Build inference image
-      #   run: docker build -t edna-classifier-inference:ci -f Dockerfile.inference .
+      - name: Build inference image (dashboard)
+        run: docker build -t edna-classifier-inference:ci -f Dockerfile.inference .
+
+      # No reference data is available in CI (data/processed/ is
+      # gitignored, and fetching it live from BOLD is out of scope for a
+      # build check), so this only proves the container starts cleanly and
+      # the app's own "no data found" message renders -- not a real
+      # inference smoke test. See app/dashboard.py's missing-data handling.
+      - name: Smoke-test inference image starts
+        run: |
+          docker run -d --name edna-dashboard -p 8501:8501 edna-classifier-inference:ci
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:8501/_stcore/health; then
+              echo "Dashboard is healthy"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Dashboard did not become healthy in time"
+          docker logs edna-dashboard
+          exit 1
 
   test:
     runs-on: ubuntu-latest

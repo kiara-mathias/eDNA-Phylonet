@@ -7,11 +7,11 @@ always returns a usable, ranked answer -- either a confident species call,
 or a "novel taxon, closest relative: X" flag with a hierarchical confidence
 score at each taxonomic rank (species -> genus -> family -> order).
 
-**Current status: ingestion, cleaning, clade-exclusion splitting, the base
-classifier, and the hierarchical fallback/novelty-flagging layer are all
-implemented and validated end-to-end.** The BLAST/QIIME2 benchmarking
-harness and the dashboard described below are designed but not yet
-implemented -- see [Roadmap](#roadmap).
+**Current status: all 8 steps of the build plan are implemented and
+validated end-to-end** -- ingestion, cleaning, clade-exclusion splitting,
+the base classifier, the hierarchical fallback/novelty-flagging layer, the
+BLAST+Naive-Bayes+1-NN benchmarking harness, and the Streamlit dashboard --
+see [Roadmap](#roadmap).
 
 ## Approach
 
@@ -32,8 +32,11 @@ see [`configs/eval.yaml`](configs/eval.yaml) for why genus rather than
 family, given this dataset only spans 5 families -- with family-level
 accuracy reported as the benchmark metric) on marine fish COI-5P barcodes
 from BOLD Systems (5 families: Gadidae, Scombridae, Pleuronectidae,
-Serranidae, Carangidae). A BLAST + QIIME2 naive-Bayes baseline comparison
-is planned for Step 6 (not yet implemented).
+Serranidae, Carangidae). Benchmarked against a real BLAST+ baseline, a
+scikit-learn Naive Bayes stand-in for QIIME2's classifier, and a
+no-phylogeny/no-geo 1-NN ablation of our own encoder -- see
+[`src/eval/benchmark.py`](src/eval/benchmark.py) and the
+[Benchmarking](#benchmarking) section below.
 
 "Phylogeny structure + species co-occurrence" is currently operationalized
 as taxonomic hierarchy (order/family/genus/species, from BOLD metadata) +
@@ -59,13 +62,14 @@ edna-classifier/
     features/          # KmerPCAEncoder (implemented); learned encoder not yet
     model/             # Paper2Classifier: taxonomy+geo nearest-centroid (implemented)
     fallback/          # HierarchicalFallback: cascading novelty flagging (implemented)
-    eval/              # clade-exclusion splitter + baseline/fallback validation
-                       # (implemented); BLAST/QIIME2 benchmarking harness not yet
-  app/                 # dashboard (not yet implemented)
+    eval/              # clade-exclusion splitter, baseline/fallback validation,
+                       # and the BLAST/Naive-Bayes/1-NN benchmark (all implemented)
+    baselines/         # NaiveBayesBaseline, NearestNeighborBaseline, BlastBaseline
+  app/                 # Streamlit dashboard: pipeline.py + dashboard.py (implemented)
   configs/             # YAML config per experiment
   tests/               # offline unit tests (no network required)
-  Dockerfile           # CPU-only image for ingest/preprocess
-  Dockerfile.inference # placeholder for the future dashboard-only image
+  Dockerfile           # CPU-only image for ingest/preprocess (+ ncbi-blast+)
+  Dockerfile.inference # lightweight dashboard-only image
   requirements.txt     # pinned exact versions
 ```
 
@@ -135,6 +139,48 @@ seen species), ~90% still get a confident species call, consistent with
 the 90th-percentile calibration, with ~88-90% of those species calls
 actually correct.
 
+## Benchmarking
+
+```bash
+# 6. Compare our system (encoder + Paper2Classifier + HierarchicalFallback)
+#    against a real BLAST+ baseline, a scikit-learn Naive Bayes stand-in
+#    for QIIME2's classifier, and a no-phylogeny/no-geo 1-NN ablation of
+#    our own encoder -- across all three holdout levels. Reports per-rank
+#    coverage (fraction of queries given any answer) and accuracy-among-
+#    answered (of those, fraction correct). Writes
+#    data/eval_results/benchmark.json.
+python -m src.eval.benchmark --config configs/eval.yaml
+```
+
+On held-out genera, our system mostly abstains at species/genus level
+(coverage ~1-2%) rather than guessing wrong, while Naive Bayes and 1-NN
+always answer (100% coverage) but get ~0% species/genus accuracy there --
+the exact failure mode this project's fallback exists to avoid. At
+family/order, our system's accuracy-among-answered (~0.71-0.84) beats
+Naive Bayes (~0.10-0.16) and is comparable to the 1-NN ablation, showing
+where the phylogeny/geo reasoning helps vs. where the embedding itself is
+doing the work. The BLAST row requires `blastn`/`makeblastdb` on `PATH`
+(installed in Docker/CI; not required for local development, skipped with
+a logged warning if absent -- see `src/baselines/blast_baseline.py`).
+
+## Dashboard
+
+```bash
+# 7. Launch the interactive dashboard: paste/upload a DNA sequence and get
+#    a hierarchical, novelty-aware prediction, plus a tab showing the
+#    Step 6 benchmark comparison (if data/eval_results/benchmark.json
+#    exists).
+streamlit run app/dashboard.py
+```
+
+Requires `data/processed/sequences.parquet` to already exist (steps 1-2
+above) -- the dashboard fits the encoder + classifier + fallback once at
+startup (cached via `st.cache_resource`, no GPU/training needed) and shows
+a friendly "run ingestion first" message instead of crashing if the data
+isn't there yet. See [`configs/app.yaml`](configs/app.yaml) for why this
+uses a random validation split rather than the genus-exclusion splits in
+`configs/eval.yaml` -- the deployed model should use every known genus.
+
 ## Running tests
 
 ```bash
@@ -149,18 +195,23 @@ access or real dataset.
 ```bash
 docker build -t edna-classifier .
 docker run -it --rm -v "$(pwd)/data:/app/data" edna-classifier bash
+
+# Lightweight dashboard-only image:
+docker build -t edna-classifier-inference -f Dockerfile.inference .
+docker run --rm -p 8501:8501 -v "$(pwd)/data:/app/data" edna-classifier-inference
+# then open http://localhost:8501
 ```
 
-The Dockerfile has **not been built/validated on the authoring machine**
-(no local Docker install) -- it is validated on every push via
+Neither Dockerfile has been built/validated on the authoring machine (no
+local Docker install) -- both are validated on every push via
 [`.github/workflows/docker-build.yml`](.github/workflows/docker-build.yml),
-which runs `docker build .` on GitHub's own runners. If you have Docker
-locally, running the command above is a good first sanity check on a fresh
-clone.
-
-`Dockerfile.inference` is an intentional placeholder (no `FROM` instruction)
-until the dashboard exists (see Roadmap) -- it will fail to build if
-attempted today.
+which builds both images on GitHub's own runners and additionally
+smoke-tests that the inference image's container starts and reports
+healthy (`/_stcore/health`) -- CI has no reference data available, so this
+only proves the container boots cleanly and the app's own "no data found"
+message renders, not a real inference request. If you have Docker
+locally, running the commands above (with real data mounted) is a good
+first sanity check on a fresh clone.
 
 ## Roadmap
 
@@ -172,21 +223,21 @@ attempted today.
 | 3 | Clade-exclusion splitter (30/50/70% genus holdout, saved as JSON) | Done |
 | 4 | Base embedding + classifier (k-mer+PCA; taxonomy+geo nearest-centroid) | Done |
 | 5 | Novel hierarchical fallback module (distance-to-centroid, novelty flagging) | Done |
-| 6 | Benchmark vs. BLAST+QIIME2 and a no-phylogeny nearest-neighbor baseline | Not started |
-| 7 | Dashboard + deployment (Streamlit, inference-only Docker image, docker-compose) | Not started |
+| 6 | Benchmark vs. BLAST+Naive-Bayes and a no-phylogeny nearest-neighbor baseline | Done |
+| 7 | Dashboard + deployment (Streamlit, inference-only Docker image) | Done |
 
 ## Portability checklist
 
 - [x] No absolute paths in source (`PROJECT_ROOT`-relative throughout)
 - [x] Dependencies pinned exactly (not `>=`)
 - [x] Data fetch script runs standalone and reproduces the manifest
-- [ ] `docker build .` succeeds from a clean clone -- Dockerfile written but
-      not locally validated; see `.github/workflows/docker-build.yml` for
-      CI validation on push
+- [ ] `docker build .` succeeds from a clean clone -- both Dockerfiles
+      written but not locally validated; see
+      `.github/workflows/docker-build.yml` for CI validation on push
 - [x] Splits saved as files, not regenerated with unseeded RNG -- see
       `data/splits/holdout_*.json`, written by `src/eval/splitter.py`
-- [x] README has exact commands: clean clone -> running dashboard (dashboard
-      commands will be added once Step 7 lands)
+- [x] README has exact commands: clean clone -> running dashboard (see
+      [Dashboard](#dashboard) above)
 
 ## Data source & licensing
 
