@@ -7,11 +7,11 @@ always returns a usable, ranked answer -- either a confident species call,
 or a "novel taxon, closest relative: X" flag with a hierarchical confidence
 score at each taxonomic rank (species -> genus -> family -> order).
 
-**Current status: ingestion, cleaning, clade-exclusion splitting, and a
-standalone base classifier are implemented and validated end-to-end.** The
-fallback/novelty-flagging module, the BLAST/QIIME2 benchmarking harness,
-and the dashboard described below are designed but not yet implemented --
-see [Roadmap](#roadmap).
+**Current status: ingestion, cleaning, clade-exclusion splitting, the base
+classifier, and the hierarchical fallback/novelty-flagging layer are all
+implemented and validated end-to-end.** The BLAST/QIIME2 benchmarking
+harness and the dashboard described below are designed but not yet
+implemented -- see [Roadmap](#roadmap).
 
 ## Approach
 
@@ -40,6 +40,13 @@ as taxonomic hierarchy (order/family/genus/species, from BOLD metadata) +
 geographic proximity (lat/lon per record, as a proxy for co-occurrence) --
 see [`src/model/classifier.py`](src/model/classifier.py).
 
+The hierarchical fallback (`src/fallback/novelty.py`) sits after that base
+classifier: it cascades species -> genus -> family -> order, committing to
+the deepest rank whose nearest-centroid distance is within a threshold
+calibrated (per rank) from the validation split, and otherwise flags the
+query as novel -- while always reporting the single nearest known species
+as a "closest relative" hint, with a confidence score at every rank.
+
 ## Repo layout
 
 ```
@@ -51,9 +58,9 @@ edna-classifier/
     preprocess/        # cleaning, QC (implemented)
     features/          # KmerPCAEncoder (implemented); learned encoder not yet
     model/             # Paper2Classifier: taxonomy+geo nearest-centroid (implemented)
-    fallback/          # novel hierarchical fallback module (not yet implemented)
-    eval/              # clade-exclusion splitter + baseline validation (implemented);
-                       # BLAST/QIIME2 benchmarking harness not yet implemented
+    fallback/          # HierarchicalFallback: cascading novelty flagging (implemented)
+    eval/              # clade-exclusion splitter + baseline/fallback validation
+                       # (implemented); BLAST/QIIME2 benchmarking harness not yet
   app/                 # dashboard (not yet implemented)
   configs/             # YAML config per experiment
   tests/               # offline unit tests (no network required)
@@ -102,10 +109,29 @@ python -m src.eval.validate_baseline --config configs/eval.yaml
 species/genus accuracy on held-out genera is (expectedly) 0% -- the exact
 species/genus can never be right when its whole genus was excluded from
 training, which is precisely the "zero-shot floor problem" Step 5's
-fallback module will address -- while family/order accuracy degrades
-sensibly as more genera are held out (~88% at 30% holdout, ~70% at 50%,
-~68% at 70%), confirming the base classifier's taxonomy+geography signal
-is doing real work.
+fallback module addresses -- while family/order accuracy degrades sensibly
+as more genera are held out (~88% at 30% holdout, ~70% at 50%, ~68% at
+70%), confirming the base classifier's taxonomy+geography signal is doing
+real work.
+
+```bash
+# 5. Fit the encoder + HierarchicalFallback on each split's train set,
+#    calibrate confidence thresholds on val, and report novelty-detection
+#    recall / abstention / resolved-rank accuracy on the held-out test set.
+#    Writes data/eval_results/fallback.json.
+python -m src.eval.validate_fallback --config configs/eval.yaml
+```
+
+`validate_fallback` prints, per holdout level: **novelty-detection recall**
+on held-out-genus queries (~98-99% -- the fallback correctly recognizes
+these as unseen almost every time), **abstention rate** (~1-2%, fully
+unresolved even at order level), and **family-resolved accuracy** among
+queries the model *did* commit to at family rank (~63-70%, in the same
+ballpark as `validate_baseline`'s unconditional family accuracy -- a good
+cross-check between the two scripts). On the val split (in-distribution,
+seen species), ~90% still get a confident species call, consistent with
+the 90th-percentile calibration, with ~88-90% of those species calls
+actually correct.
 
 ## Running tests
 
@@ -143,7 +169,7 @@ attempted today.
 | 2 | Cleaning + taxonomy table (`sequences.parquet`) | Done |
 | 3 | Clade-exclusion splitter (30/50/70% genus holdout, saved as JSON) | Done |
 | 4 | Base embedding + classifier (k-mer+PCA; taxonomy+geo nearest-centroid) | Done |
-| 5 | Novel hierarchical fallback module (distance-to-centroid, novelty flagging) | Not started |
+| 5 | Novel hierarchical fallback module (distance-to-centroid, novelty flagging) | Done |
 | 6 | Benchmark vs. BLAST+QIIME2 and a no-phylogeny nearest-neighbor baseline | Not started |
 | 7 | Dashboard + deployment (Streamlit, inference-only Docker image, docker-compose) | Not started |
 
