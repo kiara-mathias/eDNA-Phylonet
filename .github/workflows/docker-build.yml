@@ -33,6 +33,12 @@ jobs:
         with:
           python-version: "3.12"
 
+      # Provides makeblastdb/blastn for the Step 6 BLAST baseline tests
+      # (tests/test_blast_baseline.py) -- skipped when unavailable (e.g.
+      # local dev), so installing it here means CI actually exercises them.
+      - name: Install BLAST+
+        run: sudo apt-get update && sudo apt-get install -y ncbi-blast+
+
       - name: Install dependencies
         run: pip install -r requirements.txt
 

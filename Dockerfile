@@ -19,6 +19,13 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
+# ncbi-blast+ provides makeblastdb/blastn for the Step 6 BLAST baseline
+# (src/baselines/blast_baseline.py). Not a Python dependency, so it can't
+# go in requirements.txt -- installed here instead.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ncbi-blast+ \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 

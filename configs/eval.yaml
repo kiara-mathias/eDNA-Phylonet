@@ -42,3 +42,20 @@ fallback:
   # less sensitive to genuinely novel ones). Reuses classifier.seq_weight /
   # classifier.geo_weight for the underlying distance combination.
   rank_percentile: 90.0
+
+baselines:
+  naive_bayes:
+    # k-mer size for the raw frequency vectors fed to MultinomialNB (mirrors
+    # QIIME2's actual classifier algorithm, which works on raw k-mer/feature
+    # counts rather than a PCA-reduced embedding).
+    k: 4
+  blast:
+    # Rebuilt per run from the current split's train sequences; not
+    # committed (see .gitignore).
+    db_dir: data/blast_db
+    evalue: 1.0e-10
+    # Standard COI species-level %identity cutoff from the barcoding
+    # literature (not tuned against this dataset). A top hit below this is
+    # treated as "no confident call" -- i.e. BLAST fails outright, per this
+    # project's framing of exact-match tools' failure mode.
+    min_pident: 97.0
