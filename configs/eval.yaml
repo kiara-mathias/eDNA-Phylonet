@@ -1,0 +1,36 @@
+# Config for the clade-exclusion splitter (Step 3) and the base
+# embedding+classifier validation run (Step 4).
+#
+# All paths are repo-root-relative (see src/common.py); no absolute paths.
+
+data:
+  sequences_path: data/processed/sequences.parquet
+
+splitter:
+  # Held-out unit is genus, not family: the dataset (see data/manifest.json)
+  # only spans 5 families but 151 genera, so family-level holdout at
+  # 30/50/70% would round to 1-4 families -- too coarse for a real curve.
+  # Genus-level holdout gives statistically meaningful splits while we
+  # still report family-level accuracy as the benchmark metric.
+  unit: genus
+  holdout_fractions: [0.3, 0.5, 0.7]
+  # Fraction of the *seen* (non-held-out) rows set aside as validation, to
+  # sanity-check ordinary (non-zero-shot) generalization alongside the
+  # zero-shot test set.
+  val_fraction: 0.15
+  seed: 42
+  splits_dir: data/splits
+
+encoder:
+  # k-mer size for the frequency-vector encoder (4^k dimensions before PCA).
+  k: 4
+  n_components: 50
+  random_state: 42
+
+classifier:
+  # Weights for combining normalized sequence-embedding distance and
+  # normalized geographic (haversine) distance into a single nearest-
+  # centroid ranking. Geo term is dropped (renormalized) when coordinates
+  # are missing for a given comparison.
+  seq_weight: 0.8
+  geo_weight: 0.2
