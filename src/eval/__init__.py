@@ -12,8 +12,11 @@ Implemented:
 - ``validate_fallback.py``: runs the Step 5 encoder + ``HierarchicalFallback``
   against each saved split and reports novelty-detection recall, false-flag
   rate, abstention rate, and resolved-rank accuracy.
+- ``benchmark.py``: runs the full Step 6 comparison -- our system vs. the
+  three ``src/baselines`` -- reporting per-rank coverage + accuracy-among-
+  answered across all three holdout levels.
 
-Not yet implemented: the full benchmarking harness (Step 6) comparing this
-system against a BLAST + QIIME2 naive-Bayes baseline and a no-phylogeny
-nearest-neighbor baseline, reporting coverage/confidence curves.
+Not yet implemented: coverage/confidence *curves* (varying calibration
+thresholds and plotting the tradeoff) -- this pass reports point estimates
+at the currently-configured thresholds only.
 """

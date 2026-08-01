@@ -5,6 +5,9 @@ data/processed/
 # Note: data/splits/ is intentionally NOT gitignored -- those are the saved,
 # seeded clade-exclusion splits and are meant to be committed for reproducibility.
 data/eval_results/
+# BLAST database + FASTA files, rebuilt per benchmark run from the current
+# split's train/test sequences (src/baselines/blast_baseline.py).
+data/blast_db/
 
 # Python
 __pycache__/
