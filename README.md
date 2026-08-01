@@ -125,7 +125,7 @@ docker run -it --rm -v "$(pwd)/data:/app/data" edna-classifier bash
 
 The Dockerfile has **not been built/validated on the authoring machine**
 (no local Docker install) -- it is validated on every push via
-[`.github/workflows/docker-build.yml`](../.github/workflows/docker-build.yml),
+[`.github/workflows/docker-build.yml`](.github/workflows/docker-build.yml),
 which runs `docker build .` on GitHub's own runners. If you have Docker
 locally, running the command above is a good first sanity check on a fresh
 clone.
