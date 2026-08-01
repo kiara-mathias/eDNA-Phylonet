@@ -35,8 +35,20 @@ from app.pipeline import (  # noqa: E402
     load_pipeline,
 )
 from src.common import resolve_path  # noqa: E402
+from src.fallback.novelty import FallbackPrediction  # noqa: E402
 
 _RANKS = ("species", "genus", "family", "order")
+_TREE_RANKS = ("order", "family", "genus", "species")  # coarse -> fine, for drawing top-down
+
+# Confidence color thresholds mirror HierarchicalFallback's own semantics: a
+# node's fill color is a direct visual read of prediction.confidence[rank],
+# not a separate judgment call.
+_CONFIDENT_COLOR = "#1b7a3d"
+_BORDERLINE_COLOR = "#c98a12"
+_LOW_CONFIDENCE_COLOR = "#b3261e"
+_NOVEL_FILL_COLOR = "#f1f3f4"
+_NOVEL_FONT_COLOR = "#3c4043"
+_NOVEL_BORDER_COLOR = "#9aa0a6"
 
 
 @st.cache_resource(show_spinner="Fitting encoder + classifier + fallback on the known reference data...")
@@ -48,13 +60,68 @@ def _cached_pipeline(config_path: str) -> Pipeline | None:
         return None
 
 
+def _confidence_color(confidence: float) -> str:
+    if confidence >= 0.66:
+        return _CONFIDENT_COLOR
+    if confidence >= 0.33:
+        return _BORDERLINE_COLOR
+    return _LOW_CONFIDENCE_COLOR
+
+
+def _escape_dot_label(text: str) -> str:
+    return text.replace("\\", "\\\\").replace('"', '\\"')
+
+
+def _build_taxonomy_tree_dot(prediction: FallbackPrediction) -> str:
+    """Renders the order->family->genus->species cascade as a DOT graph.
+
+    Each resolved node's fill color is that rank's calibrated confidence
+    (green/amber/red); a dashed leaf marks exactly where the cascade
+    dropped below threshold, labeled with the closest known relative --
+    the same "novel taxon, closest relative: X" the model itself reports,
+    just drawn instead of only stated.
+    """
+    lines = [
+        "digraph taxonomy {",
+        'graph [rankdir=LR, bgcolor="transparent", nodesep=0.5, ranksep=0.7];',
+        'node [shape=box, style="rounded,filled", fontname="Helvetica", '
+        'fontsize=13, fontcolor="white", color="#ffffff33", penwidth=1];',
+        'edge [fontname="Helvetica", fontsize=10, color="#9aa0a6", arrowsize=0.8];',
+    ]
+
+    previous_node_id: str | None = None
+    for rank in _TREE_RANKS:
+        value = getattr(prediction, rank)
+        if value is None:
+            break
+        node_id = f"n_{rank}"
+        confidence = prediction.confidence.get(rank, 0.0)
+        label = _escape_dot_label(f"{value}\n{rank} \u00b7 {confidence * 100:.0f}%")
+        lines.append(f'{node_id} [label="{label}", fillcolor="{_confidence_color(confidence)}"];')
+        if previous_node_id is not None:
+            lines.append(f"{previous_node_id} -> {node_id};")
+        previous_node_id = node_id
+
+    if prediction.is_novel:
+        novel_label = _escape_dot_label(f"novel taxon\nclosest relative:\n{prediction.closest_relative_species}")
+        lines.append(
+            f'n_novel [label="{novel_label}", style="rounded,dashed,filled", '
+            f'fillcolor="{_NOVEL_FILL_COLOR}", fontcolor="{_NOVEL_FONT_COLOR}", color="{_NOVEL_BORDER_COLOR}"];'
+        )
+        if previous_node_id is not None:
+            lines.append(f'{previous_node_id} -> n_novel [style=dashed, label="below threshold"];')
+
+    lines.append("}")
+    return "\n".join(lines)
+
+
 def _render_classify_tab(pipeline: Pipeline) -> None:
-    st.caption(
-        f"Fitted on {pipeline.n_train:,} training sequences "
-        f"({pipeline.n_species:,} species / {pipeline.n_genera:,} genera / "
-        f"{pipeline.n_families:,} families / {pipeline.n_orders:,} orders), "
-        f"calibrated on {pipeline.n_val:,} held-back sequences."
-    )
+    metric_cols = st.columns(4)
+    metric_cols[0].metric("Training sequences", f"{pipeline.n_train:,}")
+    metric_cols[1].metric("Species", f"{pipeline.n_species:,}")
+    metric_cols[2].metric("Genera", f"{pipeline.n_genera:,}")
+    metric_cols[3].metric("Families / Orders", f"{pipeline.n_families:,} / {pipeline.n_orders:,}")
+    st.caption(f"Calibrated on {pipeline.n_val:,} held-back validation sequences.")
 
     raw_text = st.text_area(
         "Paste a DNA sequence (raw bases or a full FASTA record)",
@@ -83,6 +150,8 @@ def _render_classify_tab(pipeline: Pipeline) -> None:
 
     prediction = classify_sequence(pipeline, sequence, lat, lon)
 
+    st.divider()
+
     if prediction.is_novel:
         st.warning(
             f"**Novel taxon** (no confident call at species or genus level). "
@@ -91,20 +160,37 @@ def _render_classify_tab(pipeline: Pipeline) -> None:
     else:
         st.success(f"**{prediction.species}** (resolved at species level)")
 
-    st.subheader("Resolved taxonomy")
-    taxonomy_row = {rank: getattr(prediction, rank) or "—" for rank in _RANKS}
-    st.table(pd.DataFrame([taxonomy_row]))
+    tree_col, confidence_col = st.columns([3, 2])
 
-    st.subheader("Per-rank confidence")
-    confidence_df = pd.DataFrame(
-        {
-            "rank": _RANKS,
-            "confidence": [prediction.confidence[r] for r in _RANKS],
-            "distance": [prediction.distance[r] for r in _RANKS],
-        }
-    ).set_index("rank")
-    st.bar_chart(confidence_df["confidence"])
-    st.dataframe(confidence_df, width="stretch")
+    with tree_col:
+        st.subheader("Taxonomic tree")
+        st.graphviz_chart(_build_taxonomy_tree_dot(prediction), width="stretch")
+        st.caption(
+            "Node color = that rank's calibrated confidence (green = confident, "
+            "amber = borderline, red = low). Dashed branch = below threshold, i.e. "
+            "the point the model chose to flag novelty instead of guessing."
+        )
+
+    with confidence_col:
+        st.subheader("Per-rank confidence")
+        confidence_df = pd.DataFrame(
+            {
+                "Rank": [r.capitalize() for r in _RANKS],
+                "Confidence": [prediction.confidence[r] * 100 for r in _RANKS],
+                "Distance": [prediction.distance[r] for r in _RANKS],
+            }
+        )
+        st.dataframe(
+            confidence_df,
+            column_config={
+                "Confidence": st.column_config.ProgressColumn(
+                    "Confidence", min_value=0.0, max_value=100.0, format="%.0f%%"
+                ),
+                "Distance": st.column_config.NumberColumn("Distance (scaled)", format="%.3f"),
+            },
+            hide_index=True,
+            width="stretch",
+        )
 
 
 def _render_benchmark_tab(benchmark_results_path: str) -> None:
@@ -141,6 +227,17 @@ def _render_benchmark_tab(benchmark_results_path: str) -> None:
 
         st.dataframe(pd.DataFrame(rows).set_index("system"), width="stretch")
 
+        accuracy_by_rank = pd.DataFrame(
+            {
+                system_name: [scores[rank]["accuracy_among_answered"] for rank in _RANKS]
+                for system_name, scores in split_result["systems"].items()
+                if scores is not None
+            },
+            index=[rank.capitalize() for rank in _RANKS],
+        )
+        st.caption("Accuracy among answered, by rank (higher is better; missing bars = system skipped)")
+        st.bar_chart(accuracy_by_rank, width="stretch")
+
 
 def main() -> None:
     st.set_page_config(page_title="eDNA Biodiversity Classifier", layout="wide")
@@ -150,6 +247,7 @@ def main() -> None:
         "sequence, this system always returns a usable, ranked answer -- falling back "
         "to genus/family/order and flagging genuinely novel taxa rather than guessing wrong."
     )
+    st.divider()
 
     config = load_app_config()
     pipeline = _cached_pipeline("configs/app.yaml")
