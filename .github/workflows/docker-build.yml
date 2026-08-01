@@ -1,0 +1,40 @@
+name: docker-build
+
+# Validates that `docker build .` succeeds from a clean checkout, using
+# GitHub's own runners -- this is the portability check for contributors
+# (including the project author) who don't have Docker installed locally.
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build main image (ingest/preprocess)
+        run: docker build -t edna-classifier:ci .
+
+      # Dockerfile.inference is intentionally a stub (no FROM instruction)
+      # until the dashboard (Step 7) exists -- building it now would only
+      # produce a misleading failure, not a useful signal. Re-enable this
+      # step once Dockerfile.inference has real content.
+      # - name: Build inference image
+      #   run: docker build -t edna-classifier-inference:ci -f Dockerfile.inference .
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run offline unit tests
+        run: pytest tests/ -v
