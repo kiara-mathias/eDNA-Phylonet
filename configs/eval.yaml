@@ -34,3 +34,11 @@ classifier:
   # are missing for a given comparison.
   seq_weight: 0.8
   geo_weight: 0.2
+
+fallback:
+  # Percentile of the val split's (in-distribution) nearest-distance
+  # distribution used to calibrate each rank's confidence threshold. Higher
+  # = more permissive (fewer false novelty flags on known queries, but also
+  # less sensitive to genuinely novel ones). Reuses classifier.seq_weight /
+  # classifier.geo_weight for the underlying distance combination.
+  rank_percentile: 90.0
