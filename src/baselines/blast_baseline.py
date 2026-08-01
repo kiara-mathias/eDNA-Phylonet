@@ -52,7 +52,19 @@ class BlastBaseline:
 
         self._db_path = self.db_dir / "train_db"
         subprocess.run(
-            ["makeblastdb", "-in", str(fasta_path), "-dbtype", "nucl", "-out", str(self._db_path)],
+            [
+                "makeblastdb",
+                "-in",
+                str(fasta_path),
+                "-dbtype",
+                "nucl",
+                # Without this, makeblastdb discards our FASTA headers and
+                # assigns internal ids (e.g. "gnl|BL_ORD_ID|0") instead, so
+                # blastn's sseqid output would no longer match process_id.
+                "-parse_seqids",
+                "-out",
+                str(self._db_path),
+            ],
             check=True,
             capture_output=True,
             text=True,

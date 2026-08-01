@@ -8,6 +8,8 @@ dev machine, but installed in Docker/CI (see ``Dockerfile`` and
 
 from __future__ import annotations
 
+import random
+
 import pandas as pd
 import pytest
 
@@ -18,6 +20,17 @@ pytestmark = pytest.mark.skipif(
     reason="blastn/makeblastdb not found on PATH (expected on this dev machine; installed in CI)",
 )
 
+
+def _random_sequence(seed: int, length: int = 150) -> str:
+    # Real barcode sequences aren't periodic/low-complexity, so a plain
+    # repeated motif (e.g. "ACGTACGT...") gets fully masked by blastn's
+    # default DUST low-complexity filter and never produces a hit --
+    # pseudo-random, non-repetitive sequences are needed for these tests to
+    # exercise real BLAST alignment behavior.
+    rng = random.Random(seed)
+    return "".join(rng.choice("ACGT") for _ in range(length))
+
+
 _TRAIN_ROWS = [
     {
         "process_id": "TRAIN1",
@@ -25,7 +38,7 @@ _TRAIN_ROWS = [
         "genus": "A",
         "family": "FA",
         "order": "OA",
-        "sequence": "ACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGT",
+        "sequence": _random_sequence(seed=1),
     },
     {
         "process_id": "TRAIN2",
@@ -33,7 +46,7 @@ _TRAIN_ROWS = [
         "genus": "B",
         "family": "FB",
         "order": "OB",
-        "sequence": "TTTTGGGGCCCCTTTTGGGGCCCCTTTTGGGGCCCCTTTTGGGGCCCCTTTTGGGGCCCC",
+        "sequence": _random_sequence(seed=2),
     },
 ]
 
@@ -68,10 +81,9 @@ def test_fit_and_predict_exact_match(tmp_path):
 
 def test_query_with_no_hit_returns_no_answer(tmp_path):
     train_df = pd.DataFrame(_TRAIN_ROWS)
-    # An unrelated, highly divergent sequence relative to both training rows.
-    test_df = pd.DataFrame(
-        [{"process_id": "QUERY2", "sequence": "AGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAGAG"}]
-    )
+    # An unrelated, independently-random sequence -- ~25% expected identity
+    # by chance, far below any reasonable min_pident/evalue cutoff.
+    test_df = pd.DataFrame([{"process_id": "QUERY2", "sequence": _random_sequence(seed=99)}])
 
     model = BlastBaseline(db_dir=tmp_path / "blast_db", evalue=1e-10, min_pident=97.0)
     model.fit(train_df)
