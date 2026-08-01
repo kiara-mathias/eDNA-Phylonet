@@ -1,0 +1,33 @@
+# Data (fetched/generated, not committed -- see data/manifest.json for provenance)
+data/raw/
+data/processed/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+*.egg-info/
+build/
+dist/
+
+# Model weights (pulled at runtime, not committed -- see project spec Step 7)
+*.pt
+*.pth
+*.ckpt
+weights/
+
+# Env / secrets
+.env
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Test / coverage
+.pytest_cache/
+.coverage
+htmlcov/

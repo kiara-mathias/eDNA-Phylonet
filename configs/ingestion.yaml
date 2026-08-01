@@ -1,0 +1,54 @@
+# Data ingestion config for the eDNA classifier's first dataset:
+# marine fish (Actinopterygii) COI-5P barcodes from BOLD Systems.
+#
+# All paths here are relative to the repo root (PROJECT_ROOT). No absolute
+# paths -- fetch_bold.py and clean.py resolve them against the repo root at
+# runtime, so this config works unmodified on any machine.
+
+query:
+  # BOLD query string, in "scope:term" phrases (see bold_client.py docstring).
+  # Same-scope phrases combine as OR when separated by `;` (confirmed live
+  # against the real API -- pipe-delimited OR, documented for the legacy
+  # v4 API, does NOT work here).
+  #
+  # NOTE: "Actinopterygii" is not in BOLD's controlled taxonomic vocabulary
+  # (it resolves to an `ids:*` fallback match, i.e. no real match) -- BOLD
+  # uses "Teleostei" for (almost all) bony fish. Querying the whole class
+  # returns ~391K specimens / ~89K species, far beyond this project's
+  # ~10K-50K sequence / ~500-1000 species target, so this instead unions
+  # five well-sampled, taxonomically distinct marine fish families (cods,
+  # mackerels/tunas, flatfish, groupers, jacks). Verified end-to-end
+  # against the live API: ~28.9K raw records -> 12,627 sequences / 713
+  # species / 151 genera after cleaning (src/preprocess/clean.py), which
+  # lands squarely in this project's ~10K-50K sequence / ~500-1000 species
+  # target. Adjust the family list to change scope/size.
+  scope: "tax:family:Gadidae;tax:family:Scombridae;tax:family:Pleuronectidae;tax:family:Serranidae;tax:family:Carangidae"
+  extent: full
+
+# BOLD has no query-time marker filter; records are filtered to this marker
+# client-side after download (see fetch_bold.py).
+marker: COI-5P
+
+# Safety cap on total records downloaded, to keep the first pass within the
+# project's target dataset size. Set to null for no cap.
+max_records: 50000
+
+api:
+  base_url: https://portal.boldsystems.org/api
+  timeout_seconds: 60
+  batch_size: 1000
+  format: json
+
+output:
+  raw_dir: data/raw
+  manifest_path: data/manifest.json
+
+cleaning:
+  # COI-5P barcodes are conventionally ~650bp; keep a tolerant band around
+  # that to avoid discarding valid partial barcodes.
+  min_length: 500
+  max_length: 750
+  # Maximum fraction of ambiguous bases (N, or any non-ACGT character)
+  # tolerated in a sequence before it's dropped.
+  max_ambiguous_fraction: 0.01
+  output_path: data/processed/sequences.parquet

@@ -1,0 +1,9 @@
+# Placeholder for the lightweight, dashboard-only inference image (Step 7 of
+# the build plan). Will install only inference-time deps (no training
+# stack), pull model weights from external storage (HuggingFace Hub/S3/
+# GitHub Release) at container start, and run the Streamlit app in
+# src/../app.
+#
+# Not implemented yet -- src/model, src/fallback and app/ have no working
+# code to serve. Intentionally left as a stub rather than a fake build to
+# avoid a misleading "works" signal in CI before there's anything to run.
