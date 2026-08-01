@@ -71,7 +71,9 @@ edna-classifier/
 
 ## Setup
 
-Requires Python 3.11+ (developed against 3.12).
+Requires Python 3.12+ (the pinned `numpy`/`scipy`/`scikit-learn` versions in
+`requirements.txt` only ship prebuilt wheels for 3.12+; developed against
+3.12.4).
 
 ```bash
 cd edna-classifier

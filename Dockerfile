@@ -6,7 +6,12 @@
 # installed on the authoring machine). It is validated instead by
 # .github/workflows/docker-build.yml on every push, once this repo is
 # pushed to GitHub.
-FROM python:3.11-slim
+#
+# Pinned to 3.12 (not just "3.11+") to match the pinned numpy/scipy/
+# scikit-learn versions in requirements.txt, which only ship prebuilt
+# wheels for Python 3.12+ -- python:3.11-slim has no compiler toolchain,
+# so pip would otherwise try (and fail) to build them from source.
+FROM python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
