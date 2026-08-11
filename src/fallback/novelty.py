@@ -39,6 +39,7 @@ trustworthy as a well-sampled one at the same distance.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -60,6 +61,8 @@ class FallbackPrediction:
     genus-level call still fills in family/order).
     ``support`` is the training-sample count of the nearest label at each
     rank (used to deflate ``confidence`` for thinly sampled centroids).
+    ``nearest`` is the nearest training label at each rank regardless of
+    whether the cascade committed there (needed for confidence calibration).
     """
 
     predicted_rank: str | None
@@ -72,6 +75,7 @@ class FallbackPrediction:
     confidence: dict[str, float]
     distance: dict[str, float]
     support: dict[str, int]
+    nearest: dict[str, str]
 
 
 @dataclass
@@ -134,6 +138,15 @@ class HierarchicalFallback:
         self._genus_taxonomy: dict[str, tuple[str, str]] = {}
         self._family_taxonomy: dict[str, str] = {}
         self.thresholds_: dict[str, float] | None = None
+        # Optional post-hoc maps from raw distance-confidence -> P(correct),
+        # fit by ``src.eval.calibration`` when ECE is too high. Applied only to
+        # reported confidence; cascade commit decisions still use thresholds.
+        self._probability_calibrators: dict[str, Any] | None = None
+
+    def set_probability_calibrators(self, calibrators: dict[str, Any] | None) -> "HierarchicalFallback":
+        """Attach or clear per-rank post-hoc probability calibrators."""
+        self._probability_calibrators = calibrators
+        return self
 
     def _reliability(self, n_samples: int) -> float:
         """Bayesian-style shrinkage of confidence toward 0 for low-n centroids."""
@@ -268,10 +281,12 @@ class HierarchicalFallback:
 
             confidence: dict[str, float] = {}
             support: dict[str, int] = {}
+            nearest_labels: dict[str, str] = {}
             for rank in _RANKS:
                 threshold = self.thresholds_[rank]
                 dist = nearest[rank][1]
                 n_support = nearest[rank][2]
+                nearest_labels[rank] = nearest[rank][0]
                 support[rank] = n_support
                 if threshold <= 1e-12:
                     distance_confidence = 1.0 if dist <= 1e-12 else 0.0
@@ -279,7 +294,13 @@ class HierarchicalFallback:
                     distance_confidence = float(np.clip(1.0 - dist / threshold, 0.0, 1.0))
                 # Deflate by sample-count reliability so thinly backed centroids
                 # cannot report the same confidence as well-sampled ones.
-                confidence[rank] = float(distance_confidence * self._reliability(n_support))
+                raw_confidence = float(distance_confidence * self._reliability(n_support))
+                if self._probability_calibrators is not None and rank in self._probability_calibrators:
+                    confidence[rank] = float(
+                        np.clip(self._probability_calibrators[rank].predict([raw_confidence])[0], 0.0, 1.0)
+                    )
+                else:
+                    confidence[rank] = raw_confidence
 
             species = genus = family = order = None
             if predicted_rank == "species":
@@ -306,6 +327,7 @@ class HierarchicalFallback:
                     confidence=confidence,
                     distance={rank: nearest[rank][1] for rank in _RANKS},
                     support=support,
+                    nearest=nearest_labels,
                 )
             )
 

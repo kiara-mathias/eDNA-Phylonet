@@ -63,7 +63,8 @@ edna-classifier/
     model/             # Paper2Classifier: taxonomy+geo nearest-centroid (implemented)
     fallback/          # HierarchicalFallback: cascading novelty flagging (implemented)
     eval/              # clade-exclusion splitter, baseline/fallback validation,
-                       # and the BLAST/Naive-Bayes/1-NN benchmark (all implemented)
+                       # confidence calibration (ECE/reliability), and the
+                       # BLAST/Naive-Bayes/1-NN benchmark (all implemented)
     baselines/         # NaiveBayesBaseline, NearestNeighborBaseline, BlastBaseline
   app/                 # Streamlit dashboard: pipeline.py + dashboard.py (implemented)
   configs/             # YAML config per experiment
@@ -138,6 +139,15 @@ cross-check between the two scripts). On the val split (in-distribution,
 seen species), ~90% still get a confident species call, consistent with
 the 90th-percentile calibration, with ~88-90% of those species calls
 actually correct.
+
+```bash
+# 5b. Prove reported confidence is calibrated on the same held-out genera.
+#     Dumps confidence+correctness per query/rank, writes a reliability
+#     diagram, reports ECE per rank, and (if ECE > 0.1) fits isotonic /
+#     Platt recalibrators leave-one-holdout-out then re-scores. Writes
+#     data/eval_results/calibration/.
+python -m src.eval.validate_calibration --config configs/eval.yaml
+```
 
 ## Benchmarking
 

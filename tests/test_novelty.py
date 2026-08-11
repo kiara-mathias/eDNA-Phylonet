@@ -170,4 +170,18 @@ def test_distance_dict_covers_all_ranks():
     assert set(predictions[0].distance.keys()) == {"species", "genus", "family", "order"}
     assert set(predictions[0].confidence.keys()) == {"species", "genus", "family", "order"}
     assert set(predictions[0].support.keys()) == {"species", "genus", "family", "order"}
+    assert set(predictions[0].nearest.keys()) == {"species", "genus", "family", "order"}
     assert all(n >= 1 for n in predictions[0].support.values())
+    assert predictions[0].nearest["species"] == "A a"
+
+
+def test_probability_calibrator_remaps_reported_confidence():
+    fb = _fitted_calibrated(sample_count_prior=0.0)
+    # Constant map -> 0.25 regardless of raw distance confidence.
+    class _Const:
+        def predict(self, values):
+            return [0.25 for _ in values]
+
+    fb.set_probability_calibrators({rank: _Const() for rank in ("species", "genus", "family", "order")})
+    predictions = fb.predict(np.array([[0.0, 0.0]]), latlon=None)
+    assert predictions[0].confidence["species"] == pytest.approx(0.25, abs=1e-9)

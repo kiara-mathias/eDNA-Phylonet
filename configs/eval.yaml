@@ -55,6 +55,18 @@ benchmark:
   ci_level: 0.95
   seed: 42
 
+calibration:
+  # Equal-width bins on [0, 1] for reliability diagrams / ECE.
+  n_bins: 10
+  # If any rank's held-out ECE exceeds this, fit a post-hoc map from raw
+  # confidence -> P(correct) via leave-one-holdout-out on the other holdouts'
+  # test predictions (in-distribution val does not transfer to zero-shot).
+  ece_threshold: 0.1
+  # "isotonic" (nonparametric, default) or "platt" (logistic / Platt scaling).
+  method: isotonic
+  auto_recalibrate: true
+  output_dir: data/eval_results/calibration
+
 baselines:
   naive_bayes:
     # k-mer size for the raw frequency vectors fed to MultinomialNB (mirrors
