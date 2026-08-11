@@ -4,11 +4,11 @@
   ``HierarchicalFallback``, fit on nearly all known reference data, with a
   small random -- not clade-excluded -- validation slice for threshold
   calibration) and cleans pasted sequence/FASTA text.
-- ``dashboard.py``: the Streamlit app itself -- a Classify tab for
-  interactive inference (predicted taxonomy, per-rank confidence, novelty
-  flag with top-k nearest known relatives) and a Benchmark Results tab
-  rendering the Step 6 comparison against the BLAST/Naive Bayes/1-NN
-  baselines.
+- ``dashboard.py``: Classify + Benchmark tabs, plus Step 1–3 evidence
+  panels (live calibration curve, BLAST-vs-fallback gallery, interactive
+  false-confident-wrong chart). ``gallery_examples.py`` holds the
+  hardcoded held-out contrasts; ``dashboard_charts.py`` is the testable
+  chart math.
 
 There's no separately-trained model to pull from external storage (unlike
 a typical deep learning deployment) -- the k-mer+PCA encoder and

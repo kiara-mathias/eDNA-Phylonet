@@ -220,6 +220,7 @@ def test_novel_query_returns_top_k_species_and_genera_in_distance_order():
     assert pred.nearest_species[0].genus == "Near"
     assert pred.nearest_species[-1].genus == "Far"
     assert pred.closest_relative_species == "A a"
+    assert pred.nearest["species"] == "A a"
 
     assert [hit.label for hit in pred.nearest_genera] == ["Near", "Far"]
     genera_dists = [hit.distance for hit in pred.nearest_genera]

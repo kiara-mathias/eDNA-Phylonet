@@ -1,18 +1,15 @@
-"""Streamlit dashboard (Step 7 of the build plan).
+"""Streamlit dashboard (Step 7 of the build plan, plus Step 4 evidence panels).
 
-Two tabs:
-- **Classify**: paste/upload a DNA sequence (raw or FASTA), optionally give
-  a lat/lon, and see the hierarchical, novelty-aware prediction --
-  resolved rank, per-rank confidence, and (when flagged novel) the top-k
-  nearest known species and genera by distance.
-- **Benchmark Results**: renders the Step 6 comparison (``data/eval_results/
-  benchmark.json``) -- our system vs. the Naive Bayes / 1-NN / BLAST
-  baselines, per-rank coverage and accuracy-among-answered.
+Tabs:
+- **Classify**: paste a DNA sequence and see the hierarchical, novelty-aware
+  prediction (resolved rank, per-rank confidence, top-k nearest relatives).
+- **Benchmark Results**: Step 6 coverage / accuracy-among-answered table.
+- **Calibration**: live reliability diagram from Step 1 ``calibration.json``
+  (optional re-bin of ``heldout_predictions.parquet``).
+- **BLAST would have lied**: 3–5 hardcoded held-out contrasts (Step 2/3).
+- **False-confident wrong**: interactive FCW vs. threshold from Step 2.
 
-Run with ``streamlit run app/dashboard.py`` from the repo root (or see
-``Dockerfile.inference``). Requires ``data/processed/sequences.parquet``
-to already exist -- run ``python -m src.ingest.fetch_bold`` and
-``python -m src.preprocess.clean`` first if it doesn't.
+Run with ``streamlit run app/dashboard.py`` from the repo root.
 """
 
 from __future__ import annotations
@@ -26,6 +23,16 @@ import streamlit as st
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # allow `streamlit run app/dashboard.py`
 
+from app.dashboard_charts import (  # noqa: E402
+    confidence_gradient_css,
+    fcw_at_threshold,
+    fcw_curve_frame,
+    format_sequence_html,
+    live_reliability_reports,
+    reliability_frame,
+    reports_to_dicts,
+)
+from app.gallery_examples import BLAST_LIE_EXAMPLES, BlastLieExample  # noqa: E402
 from app.pipeline import (  # noqa: E402
     Pipeline,
     SequenceParseError,
@@ -39,16 +46,47 @@ from src.fallback.novelty import FallbackPrediction, NeighborHit  # noqa: E402
 
 _RANKS = ("species", "genus", "family", "order")
 _TREE_RANKS = ("order", "family", "genus", "species")  # coarse -> fine, for drawing top-down
+_METHOD_OPTIONS = ("ours", "blast", "naive_bayes", "nearest_neighbor")
+_METHOD_LABELS = {
+    "ours": "ours",
+    "blast": "BLAST",
+    "naive_bayes": "Naive Bayes",
+    "nearest_neighbor": "1-NN",
+}
 
-# Confidence color thresholds mirror HierarchicalFallback's own semantics: a
-# node's fill color is a direct visual read of prediction.confidence[rank],
-# not a separate judgment call.
 _CONFIDENT_COLOR = "#1b7a3d"
 _BORDERLINE_COLOR = "#c98a12"
 _LOW_CONFIDENCE_COLOR = "#b3261e"
 _NOVEL_FILL_COLOR = "#f1f3f4"
 _NOVEL_FONT_COLOR = "#3c4043"
 _NOVEL_BORDER_COLOR = "#9aa0a6"
+
+_PAGE_CSS = """
+<style>
+@keyframes edna-rank-reveal {
+  from { opacity: 0; transform: translateY(12px) scale(0.97); }
+  to { opacity: 1; transform: none; }
+}
+.edna-rank-cascade { display: flex; gap: 0.55rem; flex-wrap: wrap; margin: 0.4rem 0 0.8rem; }
+.edna-rank-card {
+  animation: edna-rank-reveal 0.55s ease both;
+  border-radius: 12px;
+  padding: 0.65rem 0.85rem;
+  color: #fff;
+  min-width: 8.5rem;
+  box-shadow: 0 10px 22px rgba(0,0,0,0.14);
+}
+.edna-rank-card.novel {
+  color: #3c4043;
+  border: 1.5px dashed #9aa0a6;
+}
+.edna-rank-name { font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase; opacity: 0.9; }
+.edna-rank-value { font-size: 1.02rem; font-weight: 650; margin: 0.15rem 0; }
+.edna-rank-conf { font-size: 0.78rem; font-variant-numeric: tabular-nums; }
+.edna-gallery-wrong { background: #fdecea; border: 1px solid #f5c6c2; border-radius: 12px; padding: 0.9rem 1rem; }
+.edna-gallery-honest { background: #e8f5ee; border: 1px solid #b7e0c6; border-radius: 12px; padding: 0.9rem 1rem; }
+</style>
+"""
 
 
 @st.cache_resource(show_spinner="Fitting encoder + classifier + fallback on the known reference data...")
@@ -152,6 +190,31 @@ def nearest_relatives_dataframe(prediction: FallbackPrediction) -> pd.DataFrame:
     return pd.DataFrame(_hits_to_rows(prediction.nearest_species) + _hits_to_rows(prediction.nearest_genera))
 
 
+def _rank_reveal_html(prediction: FallbackPrediction) -> str:
+    cards: list[str] = []
+    for i, rank in enumerate(_TREE_RANKS):
+        value = getattr(prediction, rank)
+        delay = f"{0.12 * i:.2f}s"
+        if value is None:
+            cards.append(
+                f'<div class="edna-rank-card novel" style="animation-delay:{delay};'
+                f'background:{_NOVEL_FILL_COLOR};">'
+                f'<div class="edna-rank-name">{rank}</div>'
+                f'<div class="edna-rank-value">unresolved</div>'
+                f'<div class="edna-rank-conf">below threshold</div></div>'
+            )
+            continue
+        conf = float(prediction.confidence.get(rank, 0.0))
+        bg = confidence_gradient_css(conf)
+        cards.append(
+            f'<div class="edna-rank-card" style="animation-delay:{delay};background:{bg};">'
+            f'<div class="edna-rank-name">{rank}</div>'
+            f'<div class="edna-rank-value">{value}</div>'
+            f'<div class="edna-rank-conf">{conf * 100:.0f}% confidence</div></div>'
+        )
+    return f'<div class="edna-rank-cascade">{"".join(cards)}</div>'
+
+
 def _render_classify_tab(pipeline: Pipeline) -> None:
     metric_cols = st.columns(4)
     metric_cols[0].metric("Training sequences", f"{pipeline.n_train:,}")
@@ -188,6 +251,8 @@ def _render_classify_tab(pipeline: Pipeline) -> None:
     prediction = classify_sequence(pipeline, sequence, lat, lon)
 
     st.divider()
+    st.markdown(format_sequence_html(sequence), unsafe_allow_html=True)
+    st.caption(f"{len(sequence)} bp · base colors A/C/G/T")
 
     if prediction.is_novel:
         top_species = ", ".join(hit.label for hit in prediction.nearest_species[:3]) or prediction.closest_relative_species
@@ -199,6 +264,9 @@ def _render_classify_tab(pipeline: Pipeline) -> None:
         )
     else:
         st.success(f"**{prediction.species}** (resolved at species level)")
+
+    st.markdown(_rank_reveal_html(prediction), unsafe_allow_html=True)
+    st.caption("Cards fill on a confidence gradient (red → amber → green) and reveal coarse-to-fine.")
 
     tree_col, confidence_col = st.columns([3, 2])
 
@@ -313,8 +381,221 @@ def _render_benchmark_tab(benchmark_results_path: str) -> None:
         st.bar_chart(accuracy_by_rank, width="stretch")
 
 
+def _altair_reliability(frame: pd.DataFrame):
+    import altair as alt
+
+    perfect = pd.DataFrame({"mean_confidence": [0.0, 1.0], "accuracy": [0.0, 1.0]})
+    diagonal = (
+        alt.Chart(perfect)
+        .mark_line(strokeDash=[5, 4], color="#9aa0a6")
+        .encode(x="mean_confidence:Q", y="accuracy:Q")
+    )
+    if frame.empty:
+        return diagonal.properties(title="No occupied confidence bins")
+    points = (
+        alt.Chart(frame)
+        .mark_line(point=True)
+        .encode(
+            x=alt.X("mean_confidence:Q", title="Predicted confidence (bin mean)", scale=alt.Scale(domain=[0, 1])),
+            y=alt.Y("accuracy:Q", title="Observed accuracy", scale=alt.Scale(domain=[0, 1])),
+            color=alt.Color("rank:N", title="Rank"),
+            tooltip=["rank", "mean_confidence", "accuracy", "count", "ece"],
+        )
+    )
+    return (diagonal + points).properties(height=420)
+
+
+def _render_calibration_tab(calibration_results_path: str) -> None:
+    st.caption(
+        "Step 1 reliability diagram: bin held-out confidence vs. whether the nearest "
+        "label at that rank was correct. ECE is the size-weighted |acc − conf|."
+    )
+    path = resolve_path(calibration_results_path)
+    if not path.exists():
+        st.info(
+            "No calibration results yet. Run "
+            "`python -m src.eval.validate_calibration --config configs/eval.yaml` "
+            f"to write `{calibration_results_path}`."
+        )
+        return
+
+    with open(path, "r", encoding="utf-8") as fh:
+        summary = json.load(fh)
+
+    source = st.radio(
+        "Curve source",
+        options=["raw", "recalibrated"],
+        horizontal=True,
+        help="Recalibrated is leave-one-holdout-out isotonic/Platt on ranks whose raw ECE failed the gate.",
+    )
+    block = summary.get(source) or summary.get("raw")
+    if not block:
+        st.warning("calibration.json has no reliability reports.")
+        return
+
+    predictions_path = summary.get("predictions_path")
+    predictions_file = resolve_path(predictions_path) if predictions_path else None
+    n_bins = int(summary.get("n_bins", 10))
+    if predictions_file is not None and predictions_file.exists():
+        n_bins = int(st.slider("Confidence bins (live re-bin of held-out predictions)", 4, 20, n_bins))
+        pred_df = pd.read_parquet(predictions_file)
+        if "split" in pred_df.columns:
+            pred_df = pred_df[pred_df["split"] == "test"]
+        reports = reports_to_dicts(live_reliability_reports(pred_df, n_bins=n_bins))
+        st.caption(f"Live re-bin of {len(pred_df):,} held-out test rows from `{predictions_file.name}`.")
+    else:
+        reports = block.get("reports") or []
+        st.caption("Live re-bin needs `heldout_predictions.parquet` beside calibration.json; showing saved bins.")
+
+    ece_cols = st.columns(len(_RANKS))
+    ece_by_rank = {r["rank"]: r.get("ece") for r in reports}
+    for i, rank in enumerate(_RANKS):
+        ece = ece_by_rank.get(rank)
+        ece_cols[i].metric(f"{rank} ECE", "—" if ece is None else f"{ece:.3f}")
+
+    frame = reliability_frame(reports)
+    st.altair_chart(_altair_reliability(frame), width="stretch")
+    st.caption(f"Decision from validate_calibration: **{summary.get('decision', 'unknown')}**.")
+
+
+def _render_gallery_example(example: BlastLieExample) -> None:
+    st.markdown(f"**{example.true_species}** · held-out genus *{example.true_genus}* ({example.holdout_fraction:.0%} split)")
+    st.markdown(format_sequence_html(example.sequence), unsafe_allow_html=True)
+
+    blast_col, ours_col = st.columns(2)
+    with blast_col:
+        st.markdown(
+            f'<div class="edna-gallery-wrong"><strong>BLAST would have lied</strong><br/>'
+            f"Called <em>{example.blast_species}</em> at {example.blast_pident:.1f}% identity "
+            f"(bitscore {example.blast_bitscore:.0f}, confidence {example.blast_confidence:.2f}). "
+            f"Wrong species and wrong genus — the hit is a seen sister, not the held-out taxon."
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+        st.write(
+            {
+                "species": example.blast_species,
+                "genus": example.blast_genus,
+                "family": example.blast_family,
+                "order": example.blast_order,
+            }
+        )
+    with ours_col:
+        resolved = example.ours_predicted_rank or "abstain"
+        st.markdown(
+            f'<div class="edna-gallery-honest"><strong>Honest fallback</strong><br/>'
+            f"Flags novel; commits only at <em>{resolved}</em> "
+            f"({example.ours_family or example.ours_order or 'no rank'}). "
+            f"Nearest known relatives are listed, not a false species name."
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+        relatives = pd.DataFrame(
+            [
+                {"list": "species", "label": hit.label, "distance": hit.distance, "genus": hit.genus}
+                for hit in example.nearest_species
+            ]
+            + [
+                {"list": "genus", "label": hit.label, "distance": hit.distance, "genus": hit.genus}
+                for hit in example.nearest_genera
+            ]
+        )
+        st.dataframe(relatives, hide_index=True, width="stretch")
+
+
+def _render_gallery_tab() -> None:
+    st.caption(
+        "Hardcoded 50% genus-holdout cases: BLAST’s operating point (≥97% identity) "
+        "still copies a seen sister-genus name with high bitscore. Ours refuses the "
+        "species/genus call and shows the Step 3 nearest-relative list instead."
+    )
+    for example in BLAST_LIE_EXAMPLES:
+        with st.expander(f"{example.true_species}  vs.  BLAST: {example.blast_species}", expanded=example is BLAST_LIE_EXAMPLES[0]):
+            _render_gallery_example(example)
+
+
+def _altair_fcw(frame: pd.DataFrame, threshold: float):
+    import altair as alt
+
+    if frame.empty:
+        return alt.Chart(pd.DataFrame({"threshold": [0, 1], "fcw": [0, 0]})).mark_line().encode(
+            x="threshold:Q", y="fcw:Q"
+        )
+    lines = (
+        alt.Chart(frame)
+        .mark_line(point=True)
+        .encode(
+            x=alt.X("threshold:Q", title="Confidence / score threshold", scale=alt.Scale(domain=[0, 1])),
+            y=alt.Y("fcw:Q", title="False-confident-wrong-call rate", scale=alt.Scale(domain=[0, 1])),
+            color=alt.Color("label:N", title="Method"),
+            tooltip=["label", "threshold", "fcw"],
+        )
+    )
+    rule = (
+        alt.Chart(pd.DataFrame({"threshold": [threshold]}))
+        .mark_rule(color="#3c4043", strokeDash=[4, 3])
+        .encode(x="threshold:Q")
+    )
+    return (lines + rule).properties(height=420)
+
+
+def _render_fcw_tab(head_to_head_results_path: str) -> None:
+    st.caption(
+        "Step 2 metric: fraction of queries that are a wrong *call* with score ≥ threshold. "
+        "Toggle methods and slide the threshold; the published curve is the 50% holdout."
+    )
+    path = resolve_path(head_to_head_results_path)
+    if not path.exists():
+        st.info(
+            "No head-to-head results yet. Run "
+            "`python -m src.eval.head_to_head --config configs/eval.yaml` "
+            f"to write `{head_to_head_results_path}`."
+        )
+        return
+
+    with open(path, "r", encoding="utf-8") as fh:
+        payload = json.load(fh)
+
+    available = []
+    for split in payload.get("splits") or []:
+        for method, scores in (split.get("systems") or {}).items():
+            if scores is not None:
+                available.append(method)
+    available = tuple(dict.fromkeys(available)) or _METHOD_OPTIONS
+
+    methods = st.multiselect(
+        "Methods",
+        options=list(available),
+        default=list(available),
+        format_func=lambda m: _METHOD_LABELS.get(m, m),
+    )
+    rank = st.selectbox("Rank", list(_RANKS), index=0)
+    subset = st.radio("Subset", options=["novel", "all"], horizontal=True, format_func=lambda s: "held-out genera" if s == "novel" else "val+test")
+    default_t = float(payload.get("default_confidence_threshold", 0.5))
+    threshold = st.slider("Confidence threshold", 0.0, 1.0, default_t, 0.05)
+
+    if not methods:
+        st.warning("Select at least one method.")
+        return
+
+    curve_df = fcw_curve_frame(payload, rank=rank, subset=subset, methods=methods)
+    at_t = fcw_at_threshold(curve_df, threshold)
+    if not at_t.empty:
+        metric_cols = st.columns(max(len(at_t), 1))
+        for i, row in at_t.iterrows():
+            metric_cols[int(i) % len(metric_cols)].metric(str(row["label"]), f"{row['fcw']:.3f}")
+
+    st.altair_chart(_altair_fcw(curve_df, threshold), width="stretch")
+    n_points = len((payload.get("splits") or [{}])[0].get("thresholds") or [])
+    st.caption(
+        f"Holdout {float(payload.get('table_holdout_fraction', 0.5)):.0%} · "
+        f"values interpolate the saved {n_points}-point sweep."
+    )
+
+
 def main() -> None:
     st.set_page_config(page_title="eDNA Biodiversity Classifier", layout="wide")
+    st.markdown(_PAGE_CSS, unsafe_allow_html=True)
     st.title("eDNA Biodiversity Classifier")
     st.caption(
         "Instead of failing outright when a read doesn't match any known reference "
@@ -326,7 +607,15 @@ def main() -> None:
     config = load_app_config()
     pipeline = _cached_pipeline("configs/app.yaml")
 
-    classify_tab, benchmark_tab = st.tabs(["Classify", "Benchmark Results"])
+    classify_tab, benchmark_tab, calibration_tab, gallery_tab, fcw_tab = st.tabs(
+        [
+            "Classify",
+            "Benchmark Results",
+            "Calibration",
+            "BLAST would have lied",
+            "False-confident wrong",
+        ]
+    )
 
     with classify_tab:
         if pipeline is None:
@@ -340,6 +629,15 @@ def main() -> None:
 
     with benchmark_tab:
         _render_benchmark_tab(config["benchmark_results_path"])
+
+    with calibration_tab:
+        _render_calibration_tab(config.get("calibration_results_path", "data/eval_results/calibration/calibration.json"))
+
+    with gallery_tab:
+        _render_gallery_tab()
+
+    with fcw_tab:
+        _render_fcw_tab(config.get("head_to_head_results_path", "data/eval_results/head_to_head/head_to_head.json"))
 
 
 if __name__ == "__main__":

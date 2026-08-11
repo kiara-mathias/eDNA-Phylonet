@@ -155,6 +155,7 @@ def collect_split_predictions(
         geo_weight=classifier_cfg["geo_weight"],
         rank_percentile=fallback_cfg["rank_percentile"],
         sample_count_prior=float(fallback_cfg.get("sample_count_prior", 5.0)),
+        n_nearest_relatives=int(fallback_cfg.get("n_nearest_relatives", 5)),
     )
     fallback.fit(train_embeddings, train_df)
     fallback.calibrate(val_embeddings, val_df, _latlon_array(val_df))
