@@ -24,19 +24,26 @@ import streamlit as st
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # allow `streamlit run app/dashboard.py`
 
 from app.dashboard_charts import (  # noqa: E402
+    benchmark_bar_frame,
+    build_benchmark_bar_figure,
+    build_reliability_figure,
     fcw_at_threshold,
+    fcw_callout_row,
     fcw_curve_frame,
+    holdout_percent_options,
     live_reliability_reports,
     reliability_frame,
     reports_to_dicts,
+    split_at_holdout,
 )
 from app.depth_tree import (  # noqa: E402,F401
     build_depth_tree_html,
     rank_visual_state,
     render_depth_tree,
 )
-from app.species_image import render_reference_photo  # noqa: E402
-from app.gallery_examples import BLAST_LIE_EXAMPLES, BlastLieExample  # noqa: E402
+from app.family_icons import result_callout_html  # noqa: E402
+from app.species_image import photo_html_for_name, render_reference_photo  # noqa: E402
+from app.gallery_examples import BLAST_LIE_EXAMPLES, BlastLieExample, lie_card_html  # noqa: E402
 from app.pipeline import (  # noqa: E402
     Pipeline,
     SequenceParseError,
@@ -48,7 +55,7 @@ from app.pipeline import (  # noqa: E402
 from src.common import resolve_path  # noqa: E402
 from src.fallback.novelty import FallbackPrediction, NeighborHit  # noqa: E402
 from theme.inject import inject_theme  # noqa: E402
-from theme.tokens import CORAL, NAVY, RANK_BAND, SAND, SEAFOAM, TEAL  # noqa: E402
+from theme.tokens import CORAL, NAVY, SAND, SEAFOAM, TEAL  # noqa: E402
 
 _RANKS = ("species", "genus", "family", "order")
 _TAB_LABELS = ("Identify", "Evidence", "Method")
@@ -121,34 +128,6 @@ def reliability_reports(summary: dict[str, Any]) -> list[dict[str, Any]]:
     return [r for r in reports if r.get("rank") in _RANKS]
 
 
-def draw_reliability_chart(frame: pd.DataFrame):
-    fig, ax = plt.subplots(figsize=(5.2, 4.4), facecolor=SAND)
-    ax.set_facecolor(SAND)
-    ax.plot([0, 1], [0, 1], linestyle="--", color=NAVY, linewidth=1.0, alpha=0.35, label="perfect")
-    for rank, group in frame.groupby("rank", sort=False):
-        ece = group["ece"].iloc[0] if "ece" in group.columns else float("nan")
-        label = f"{rank}" + (f"  ECE {ece:.3f}" if np.isfinite(ece) else "")
-        ax.plot(
-            group["mean_confidence"],
-            group["accuracy"],
-            marker="o",
-            linewidth=1.8,
-            color=RANK_BAND.get(str(rank), TEAL),
-            label=label,
-        )
-    ax.set_xlim(0.0, 1.0)
-    ax.set_ylim(0.0, 1.0)
-    ax.set_xlabel("Predicted confidence (bin mean)")
-    ax.set_ylabel("Observed accuracy")
-    ax.set_title("Reliability by taxonomic rank")
-    ax.legend(loc="lower right", frameon=False, fontsize=8)
-    for spine in ax.spines.values():
-        spine.set_color(NAVY)
-        spine.set_alpha(0.25)
-    fig.tight_layout()
-    return fig
-
-
 def draw_fcw_chart(curve_df: pd.DataFrame):
     fig, ax = plt.subplots(figsize=(7.2, 3.8), facecolor=SAND)
     ax.set_facecolor(SAND)
@@ -171,15 +150,6 @@ def draw_fcw_chart(curve_df: pd.DataFrame):
         spine.set_alpha(0.25)
     fig.tight_layout()
     return fig
-
-
-def _format_metric_with_ci(value: float | None, ci: list | None) -> str | None:
-    if value is None:
-        return None
-    text = f"{value:.3f}"
-    if ci and len(ci) == 2 and ci[0] is not None and ci[1] is not None:
-        text += f" [{ci[0]:.3f}-{ci[1]:.3f}]"
-    return text
 
 
 def _render_header(pipeline: Pipeline | None) -> None:
@@ -241,12 +211,7 @@ def _render_classify(pipeline: Pipeline) -> FallbackPrediction | None:
         f'<div class="specimen-seq">{html.escape(format_specimen_sequence(sequence))}</div>',
         unsafe_allow_html=True,
     )
-    if prediction.is_novel:
-        st.warning(
-            f"Novel taxon — closest known relative: {prediction.closest_relative_species}."
-        )
-    else:
-        st.success(f"Resolved at species: {prediction.species}")
+    st.markdown(result_callout_html(prediction), unsafe_allow_html=True)
     st.markdown(
         '<p class="panel-kicker">Taxonomic depth</p>'
         '<p class="panel-lede">Shallow water is a species-level call. '
@@ -310,9 +275,12 @@ def _render_calibration(config: dict[str, Any]) -> None:
         "Each rank uses the same depth color as the tree. Source: held-out genera.</p>",
         unsafe_allow_html=True,
     )
-    fig = draw_reliability_chart(frame)
-    st.pyplot(fig, width="stretch")
-    plt.close(fig)
+    fig = build_reliability_figure(frame)
+    st.plotly_chart(
+        fig,
+        width="stretch",
+        config={"displaylogo": False, "modeBarButtonsToRemove": ["lasso2d", "select2d"]},
+    )
 
 
 def _render_blast_gallery() -> None:
@@ -323,24 +291,17 @@ def _render_blast_gallery() -> None:
         "We flagged novelty and listed nearest known relatives instead.</p>",
         unsafe_allow_html=True,
     )
-    for example in BLAST_LIE_EXAMPLES:
-        _render_lie_example(example)
+    for row_start in range(0, len(BLAST_LIE_EXAMPLES), 2):
+        cols = st.columns(2, gap="medium")
+        chunk = BLAST_LIE_EXAMPLES[row_start : row_start + 2]
+        for col, example in zip(cols, chunk):
+            with col:
+                _render_lie_example(example)
 
 
 def _render_lie_example(example: BlastLieExample) -> None:
-    rank = example.ours_predicted_rank or "unresolved"
-    with st.expander(f"{example.true_species}  ·  BLAST named {example.blast_species}"):
-        st.markdown(
-            f'<div class="coral-flag">wrong species call</div>'
-            f'<div class="name">{html.escape(example.blast_species)}</div>'
-            f'<div class="mono-quiet">{example.blast_pident:.1f}% identity · '
-            f'bitscore {example.blast_bitscore:.0f}</div>'
-            f'<div class="mono-quiet" style="margin-top:0.4rem">true · '
-            f'{html.escape(example.true_species)}</div>'
-            f'<div class="mono-quiet">ours · {html.escape(str(rank))}</div>'
-            f'<div class="specimen-seq">{html.escape(format_specimen_sequence(example.sequence))}</div>',
-            unsafe_allow_html=True,
-        )
+    photo = photo_html_for_name(example.true_species)
+    st.markdown(lie_card_html(example, photo), unsafe_allow_html=True)
 
 
 def _render_fcw(config: dict[str, Any]) -> None:
@@ -368,46 +329,54 @@ def _render_fcw(config: dict[str, Any]) -> None:
     curve = fcw_curve_frame(payload, rank="species", subset="novel", methods=selected)
     if curve.empty:
         return
+    at_t = fcw_at_threshold(curve, threshold)
+    headline = fcw_callout_row(at_t)
+    if headline is not None:
+        st.markdown(
+            f'<div class="fcw-callout">'
+            f'<div class="fcw-value">{headline["fcw"] * 100:.0f}%</div>'
+            f'<p class="fcw-label">false-confident-wrong at {threshold:.0%} confidence · '
+            f'{html.escape(str(headline["label"]))} · held-out genera</p>'
+            f"</div>",
+            unsafe_allow_html=True,
+        )
     fig = draw_fcw_chart(curve)
     st.pyplot(fig, width="stretch")
     plt.close(fig)
-    at_t = fcw_at_threshold(curve, threshold)
-    if not at_t.empty:
-        st.dataframe(at_t, hide_index=True, width="stretch")
 
 
-def _render_benchmark_table(results: list[dict[str, Any]] | None) -> None:
+def _render_benchmark_chart(results: list[dict[str, Any]] | None) -> None:
     if not results:
         return
+    options = holdout_percent_options(results)
+    if not options:
+        return
+    st.markdown('<p class="panel-kicker">Benchmark · clade exclusion</p>', unsafe_allow_html=True)
     st.markdown(
-        '<p class="panel-lede">Coverage / accuracy-among-answered on clade-exclusion '
-        "splits (point estimate [bootstrap CI] when present).</p>",
+        '<p class="panel-lede">Coverage and accuracy-among-answered on genus-holdout '
+        "splits. Metric on the x-axis, method as color. Drag the holdout to restack.</p>",
         unsafe_allow_html=True,
     )
-    for split_result in results:
-        pct = round(split_result["holdout_fraction"] * 100)
-        st.markdown(
-            f'<p class="mono-quiet">{pct}% genus holdout · '
-            f'{split_result["n_genera_held_out"]}/{split_result["n_genera_total"]} genera · '
-            f'n_test={split_result["n_test"]:,}</p>',
-            unsafe_allow_html=True,
-        )
-        rows = []
-        for system_name, scores in split_result["systems"].items():
-            if scores is None:
-                rows.append({"system": system_name, **{f"{r}_coverage": None for r in _RANKS}})
-                continue
-            row: dict[str, Any] = {"system": system_name}
-            for rank in _RANKS:
-                row[f"{rank}_coverage"] = _format_metric_with_ci(
-                    scores[rank].get("coverage"), scores[rank].get("coverage_ci")
-                )
-                row[f"{rank}_accuracy"] = _format_metric_with_ci(
-                    scores[rank].get("accuracy_among_answered"),
-                    scores[rank].get("accuracy_among_answered_ci"),
-                )
-            rows.append(row)
-        st.dataframe(pd.DataFrame(rows).set_index("system"), width="stretch")
+    default = 50 if 50 in options else options[0]
+    percent = st.select_slider("Genus holdout", options=options, value=default, format_func=lambda pct: f"{pct}%")
+    split = split_at_holdout(results, int(percent))
+    if not split:
+        return
+    st.markdown(
+        f'<p class="mono-quiet">{percent}% genus holdout · '
+        f'{split["n_genera_held_out"]}/{split["n_genera_total"]} genera · '
+        f'n_test={split["n_test"]:,}</p>',
+        unsafe_allow_html=True,
+    )
+    frame = benchmark_bar_frame(split)
+    if frame.empty:
+        return
+    fig = build_benchmark_bar_figure(frame)
+    st.plotly_chart(
+        fig,
+        width="stretch",
+        config={"displaylogo": False, "modeBarButtonsToRemove": ["lasso2d", "select2d"]},
+    )
 
 
 def main() -> None:
@@ -436,7 +405,7 @@ def main() -> None:
         _render_blast_gallery()
     with method_tab:
         _render_fcw(config)
-        _render_benchmark_table(
+        _render_benchmark_chart(
             load_json_if_exists(config.get("benchmark_results_path", "data/eval_results/benchmark.json"))
         )
 

@@ -6,13 +6,19 @@ import pandas as pd
 import pytest
 
 from app.dashboard_charts import (
+    benchmark_bar_frame,
+    build_benchmark_bar_figure,
+    build_reliability_figure,
     fcw_at_threshold,
+    fcw_callout_row,
     fcw_curve_frame,
     format_sequence_html,
+    holdout_percent_options,
     live_reliability_reports,
     reliability_frame,
+    split_at_holdout,
 )
-from app.gallery_examples import BLAST_LIE_EXAMPLES, gallery_examples
+from app.gallery_examples import BLAST_LIE_EXAMPLES, gallery_examples, lie_card_html
 
 
 def test_gallery_has_three_to_five_held_out_contrasts():
@@ -31,6 +37,16 @@ def test_gallery_has_three_to_five_held_out_contrasts():
         assert example.true_genus not in {hit.genus for hit in example.nearest_genera}
 
 
+def test_lie_card_html_flags_blast_and_keeps_honest_call():
+    example = BLAST_LIE_EXAMPLES[0]
+    html = lie_card_html(example, photo_html="<svg class='silhouette'></svg>")
+    assert "lie-card" in html
+    assert f"BLAST said: {example.blast_species}" in html
+    assert example.true_species in html
+    assert "novel" in html
+    assert "silhouette" in html
+
+
 def test_reliability_frame_drops_empty_bins():
     reports = [
         {
@@ -45,6 +61,11 @@ def test_reliability_frame_drops_empty_bins():
     frame = reliability_frame(reports)
     assert list(frame["mean_confidence"]) == [0.8]
     assert list(frame["accuracy"]) == [0.5]
+    fig = build_reliability_figure(frame)
+    names = [trace.name for trace in fig.data]
+    assert names[0] == "perfect"
+    assert any(name.startswith("species") for name in names)
+    assert fig.data[0].line.dash == "dash"
 
 
 def test_live_reliability_reports_match_bin_counts():
@@ -87,6 +108,52 @@ def test_fcw_curve_frame_and_threshold_interpolation():
     blast = float(at_half.loc[at_half["method"] == "blast", "fcw"].iloc[0])
     assert ours == pytest.approx(0.2)
     assert blast == pytest.approx(0.5)
+
+
+def test_benchmark_bar_frame_skips_missing_systems_and_orders_metrics():
+    split = {
+        "holdout_fraction": 0.5,
+        "systems": {
+            "ours": {
+                "species": {"coverage": 0.02, "accuracy_among_answered": 0.8},
+                "genus": {"coverage": 0.05, "accuracy_among_answered": 0.7},
+                "family": {"coverage": 0.6, "accuracy_among_answered": 0.71},
+                "order": {"coverage": 0.9, "accuracy_among_answered": 0.84},
+            },
+            "blast": None,
+        },
+    }
+    frame = benchmark_bar_frame(split)
+    assert set(frame["method"]) == {"ours"}
+    assert list(frame["metric"])[:2] == ["species coverage", "species accuracy"]
+    fig = build_benchmark_bar_figure(frame)
+    assert len(fig.data) == 1
+    assert fig.layout.barmode == "group"
+
+
+def test_holdout_slider_options_and_split_lookup():
+    results = [
+        {"holdout_fraction": 0.3, "systems": {}},
+        {"holdout_fraction": 0.7, "systems": {}},
+        {"holdout_fraction": 0.5, "systems": {}},
+    ]
+    assert holdout_percent_options(results) == [30, 50, 70]
+    assert split_at_holdout(results, 50)["holdout_fraction"] == 0.5
+    assert split_at_holdout(results, 40) is None
+
+
+def test_fcw_callout_prefers_ours():
+    frame = pd.DataFrame(
+        {
+            "method": ["blast", "ours"],
+            "label": ["BLAST", "ours"],
+            "fcw": [0.4, 0.12],
+        }
+    )
+    row = fcw_callout_row(frame)
+    assert row is not None
+    assert row["method"] == "ours"
+    assert row["fcw"] == pytest.approx(0.12)
 
 
 def test_format_sequence_html_colors_bases_and_truncates():

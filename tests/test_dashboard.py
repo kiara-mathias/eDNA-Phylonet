@@ -162,12 +162,15 @@ def test_dashboard_classifies_a_known_sequence(isolated_project):
     at.button[0].click().run(timeout=60)
 
     assert not at.exception
-    assert len(at.success) + len(at.warning) >= 1
+    blob = " ".join(str(m.value) for m in at.markdown)
+    assert "Resolved at species" in blob or "Novel taxon" in blob
+    assert "family-icon" in blob
 
     # Tabs rerun the script; the call must survive a second pass.
     at.run(timeout=60)
     assert not at.exception
-    assert len(at.success) + len(at.warning) >= 1
+    blob = " ".join(str(m.value) for m in at.markdown)
+    assert "Resolved at species" in blob or "Novel taxon" in blob
 
 
 def test_dashboard_rejects_invalid_sequence_text(isolated_project):
@@ -210,7 +213,9 @@ def test_dashboard_renders_benchmark_table_when_results_exist(isolated_project):
     at.run(timeout=60)
 
     assert not at.exception
-    assert len(at.dataframe) >= 1
+    assert len(at.select_slider) >= 1
+    blob = " ".join(str(m.value) for m in at.markdown)
+    assert "clade exclusion" in blob.lower() or "genus holdout" in blob.lower()
 
 
 def test_dashboard_omits_benchmark_when_no_results(isolated_project):
@@ -230,7 +235,10 @@ def test_dashboard_gallery_renders_hardcoded_examples(isolated_project):
     at.run(timeout=60)
 
     assert not at.exception
-    assert len(at.expander) == 5
+    assert len(at.expander) == 0
+    blob = " ".join(str(m.value) for m in at.markdown)
+    assert blob.count('class="lie-card"') == 5
+    assert "BLAST said:" in blob
 
 
 def test_dashboard_fcw_renders_when_results_exist(isolated_project):
@@ -264,6 +272,8 @@ def test_dashboard_fcw_renders_when_results_exist(isolated_project):
     assert not at.exception
     assert len(at.slider) >= 1
     assert len(at.multiselect) >= 1
+    blob = " ".join(str(m.value) for m in at.markdown)
+    assert "false-confident-wrong" in blob.lower()
 
 
 def test_nearest_relatives_dataframe_lists_species_then_genera_in_given_order():

@@ -5,7 +5,7 @@
   small random -- not clade-excluded -- validation slice for threshold
   calibration) and cleans pasted sequence/FASTA text.
 - ``dashboard.py``: Identify / Evidence / Method tabs (live classification,
-  calibration + BLAST-lie gallery, FCW + clade-exclusion tables).
+  Plotly calibration + BLAST-lie gallery, FCW callout + holdout bars).
   ``gallery_examples.py`` holds the hardcoded held-out contrasts;
   ``dashboard_charts.py`` is the testable chart math.
 

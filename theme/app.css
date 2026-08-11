@@ -1,8 +1,18 @@
 /* eDNA specimen record — kill the default Streamlit chrome.
    Targets data-testid / .st* classes (stable enough across 1.4x–1.60). */
 
-html, body, [data-testid="stAppViewContainer"], .stApp {
-  background: var(--edna-sand);
+html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"], .stApp {
+  background-color: var(--edna-sand);
+  background-image: linear-gradient(
+    180deg,
+    var(--edna-sand) 0%,
+    var(--edna-sand) 42%,
+    color-mix(in srgb, var(--edna-sand) 78%, var(--edna-teal)) 78%,
+    color-mix(in srgb, var(--edna-sand) 48%, var(--edna-navy)) 100%
+  );
+  background-attachment: fixed;
+  background-repeat: no-repeat;
+  background-size: 100% 100%;
   color: var(--edna-ink);
   font-family: Inter, "Segoe UI", sans-serif;
 }
@@ -153,10 +163,28 @@ textarea {
 
 /* --- page chrome used by the specimen record --- */
 .record-header {
+  position: relative;
+  overflow: hidden;
   background: var(--edna-navy);
   color: var(--edna-sand);
   padding: 1.35rem 1.4rem 1.2rem;
   margin: 0 0 1.5rem 0;
+}
+
+.record-header::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.16;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 800 240' preserveAspectRatio='none'><path d='M0 72 Q100 18 200 72 T400 72 T600 72 T800 72 V240 H0 Z' fill='%234FA8A0'/><path d='M0 128 Q140 78 280 128 T560 128 T800 150 V240 H0 Z' fill='%23F7F4EC' fill-opacity='0.35'/></svg>");
+  background-size: cover;
+  background-position: center bottom;
+}
+
+.record-header > * {
+  position: relative;
+  z-index: 1;
 }
 
 .record-kicker {
@@ -216,7 +244,7 @@ textarea {
   margin: 0 0 0.85rem 0;
 }
 
-.relative-row, .lie-card {
+.relative-row {
   border-top: 1px solid color-mix(in srgb, var(--edna-navy) 9%, transparent);
   padding: 0.55rem 0;
   font-size: 0.9rem;
@@ -225,6 +253,41 @@ textarea {
 .relative-row .name, .lie-card .name {
   font-family: Inter, sans-serif;
   font-weight: 500;
+  margin-top: 0.45rem;
+}
+
+.lie-card {
+  border: 1px solid color-mix(in srgb, var(--edna-navy) 14%, transparent);
+  border-radius: 8px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--edna-sand) 94%, #ffffff);
+  margin: 0 0 0.85rem 0;
+  font-size: 0.9rem;
+}
+
+.lie-photo {
+  background: var(--edna-navy);
+}
+
+.lie-photo img,
+.lie-photo .silhouette {
+  display: block;
+  width: 100%;
+  height: 132px;
+  object-fit: cover;
+}
+
+.lie-body {
+  padding: 0.7rem 0.85rem 0.85rem;
+}
+
+.lie-card-head {
+  margin-bottom: 0.35rem;
+}
+
+.lie-card-head .family-icon {
+  width: 56px;
+  height: auto;
 }
 
 .mono-quiet {
@@ -232,6 +295,70 @@ textarea {
   font-size: 0.72rem;
   letter-spacing: 0.04em;
   opacity: 0.7;
+}
+
+.result-callout {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  padding: 0.7rem 0.95rem;
+  margin: 0.35rem 0 1.1rem;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--edna-navy) 14%, transparent);
+  background: color-mix(in srgb, var(--edna-sand) 92%, var(--edna-navy));
+}
+
+.result-callout.is-resolved {
+  border-left: 3px solid var(--edna-seafoam);
+}
+
+.result-callout.is-novel {
+  border-left: 3px solid var(--edna-coral);
+}
+
+.family-icon {
+  flex: 0 0 auto;
+  display: block;
+}
+
+.result-kicker {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 0.68rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.result-detail {
+  font-family: Inter, "Segoe UI", sans-serif;
+  font-size: 1.05rem;
+  font-weight: 500;
+  color: var(--edna-navy);
+  margin: 0.15rem 0 0.1rem;
+}
+
+.fcw-callout {
+  margin: 0.35rem 0 1rem;
+  padding: 0.35rem 0 0.2rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--edna-navy) 12%, transparent);
+}
+
+.fcw-value {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 2.35rem;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  color: var(--edna-navy);
+  line-height: 1.1;
+}
+
+.fcw-label {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 0.68rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--edna-navy);
+  opacity: 0.65;
+  margin: 0.35rem 0 0.7rem;
 }
 
 .coral-flag {
