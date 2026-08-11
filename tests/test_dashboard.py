@@ -17,16 +17,16 @@ import streamlit as st
 from streamlit.testing.v1 import AppTest
 
 from app.dashboard import (
-    blast_lie_cases,
     build_depth_tree_html,
     format_specimen_sequence,
+    nearest_relatives_dataframe,
     rank_visual_state,
     reliability_reports,
-    species_fcw_methods,
 )
-from src.fallback.novelty import FallbackPrediction
+from src.fallback.novelty import FallbackPrediction, NeighborHit
 
 _DASHBOARD_PATH = str(Path(__file__).resolve().parents[1] / "app" / "dashboard.py")
+_RANKS = ("species", "genus", "family", "order")
 
 
 def _random_sequence(seed: int, length: int = 80) -> str:
@@ -71,8 +71,8 @@ classifier:
 fallback:
   rank_percentile: 90.0
 benchmark_results_path: data/eval_results/benchmark.json
-calibration_summary_path: data/eval_results/calibration/calibration.json
-calibration_predictions_path: data/eval_results/calibration/heldout_predictions.parquet
+calibration_results_path: data/eval_results/calibration/calibration.json
+head_to_head_results_path: data/eval_results/head_to_head/head_to_head.json
 """,
         encoding="utf-8",
     )
@@ -91,6 +91,28 @@ def _prediction(**overrides) -> FallbackPrediction:
         distance={"species": 1.2, "genus": 0.4, "family": 0.3, "order": 0.2},
         support={"species": 3, "genus": 12, "family": 40, "order": 80},
         nearest={"species": "Gadus morhua", "genus": "Gadus", "family": "Gadidae", "order": "Gadiformes"},
+        nearest_species=[
+            NeighborHit(
+                label="Gadus morhua",
+                rank="species",
+                distance=1.2,
+                support=3,
+                genus="Gadus",
+                family="Gadidae",
+                order="Gadiformes",
+            )
+        ],
+        nearest_genera=[
+            NeighborHit(
+                label="Gadus",
+                rank="genus",
+                distance=0.4,
+                support=12,
+                genus="Gadus",
+                family="Gadidae",
+                order="Gadiformes",
+            )
+        ],
     )
     base.update(overrides)
     return FallbackPrediction(**base)
@@ -98,14 +120,6 @@ def _prediction(**overrides) -> FallbackPrediction:
 
 @pytest.fixture
 def isolated_project(tmp_path, monkeypatch):
-    """A minimal, self-contained repo root with its own app.yaml + data.
-
-    Clears Streamlit's ``st.cache_resource`` cache -- otherwise
-    ``_cached_pipeline`` (keyed on the literal string "configs/app.yaml",
-    identical across tests) would return a previous test's cached
-    ``Pipeline`` (or ``None``) instead of rebuilding it against this test's
-    isolated data.
-    """
     st.cache_resource.clear()
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("PROJECT_ROOT", str(tmp_path))
@@ -166,8 +180,7 @@ def test_dashboard_renders_benchmark_table_when_results_exist(isolated_project):
             "n_test": 50,
             "systems": {
                 "ours": {
-                    rank: {"coverage": 0.5, "accuracy_among_answered": 0.8}
-                    for rank in ("species", "genus", "family", "order")
+                    rank: {"coverage": 0.5, "accuracy_among_answered": 0.8} for rank in _RANKS
                 },
                 "blast": None,
             },
@@ -194,6 +207,76 @@ def test_dashboard_omits_benchmark_when_no_results(isolated_project):
     assert len(at.dataframe) == 0
 
 
+def test_dashboard_gallery_renders_hardcoded_examples(isolated_project):
+    at = AppTest.from_file(_DASHBOARD_PATH)
+    at.run(timeout=60)
+
+    assert not at.exception
+    assert len(at.expander) == 5
+
+
+def test_dashboard_fcw_renders_when_results_exist(isolated_project):
+    out_dir = isolated_project / "data" / "eval_results" / "head_to_head"
+    out_dir.mkdir(parents=True)
+    payload = {
+        "table_holdout_fraction": 0.5,
+        "default_confidence_threshold": 0.5,
+        "splits": [
+            {
+                "holdout_fraction": 0.5,
+                "thresholds": [0.0, 0.5, 1.0],
+                "systems": {
+                    "ours": {
+                        "novel": {rank: {"fcw_curve": [0.2, 0.1, 0.0]} for rank in _RANKS},
+                        "all": {rank: {"fcw_curve": [0.3, 0.15, 0.0]} for rank in _RANKS},
+                    },
+                    "blast": {
+                        "novel": {rank: {"fcw_curve": [0.4, 0.2, 0.0]} for rank in _RANKS},
+                        "all": {rank: {"fcw_curve": [0.5, 0.25, 0.0]} for rank in _RANKS},
+                    },
+                },
+            }
+        ],
+    }
+    (out_dir / "head_to_head.json").write_text(json.dumps(payload), encoding="utf-8")
+
+    at = AppTest.from_file(_DASHBOARD_PATH)
+    at.run(timeout=60)
+
+    assert not at.exception
+    assert len(at.slider) >= 1
+    assert len(at.multiselect) >= 1
+
+
+def test_nearest_relatives_dataframe_lists_species_then_genera_in_given_order():
+    prediction = FallbackPrediction(
+        predicted_rank=None,
+        is_novel=True,
+        closest_relative_species="A a",
+        species=None,
+        genus=None,
+        family=None,
+        order=None,
+        confidence={rank: 0.0 for rank in _RANKS},
+        distance={rank: 1.0 for rank in _RANKS},
+        support={rank: 1 for rank in _RANKS},
+        nearest={rank: "A a" if rank == "species" else "A" for rank in _RANKS},
+        nearest_species=[
+            NeighborHit(label="A a", rank="species", distance=0.1, support=3, genus="A", family="FA", order="OA"),
+            NeighborHit(label="B b", rank="species", distance=0.4, support=2, genus="B", family="FB", order="OB"),
+        ],
+        nearest_genera=[
+            NeighborHit(label="A", rank="genus", distance=0.2, support=5, genus="A", family="FA", order="OA"),
+        ],
+    )
+
+    table = nearest_relatives_dataframe(prediction)
+
+    assert list(table["Label"]) == ["A a", "B b", "A"]
+    assert list(table["Taxon rank"]) == ["Species", "Species", "Genus"]
+    assert list(table["Rank"]) == [1, 2, 1]
+
+
 def test_rank_visual_state_marks_shallower_ranks_skipped():
     prediction = _prediction(predicted_rank="genus")
     assert rank_visual_state(prediction, "species") == "skipped"
@@ -213,57 +296,6 @@ def test_depth_tree_html_includes_taxon_and_reveal_delays():
 
 def test_format_specimen_sequence_groups_bases():
     assert format_specimen_sequence("ACGTACGTAC", width=80) == "ACGTACGTAC"
-
-
-def test_blast_lie_cases_picks_confident_wrong_novel_queries():
-    df = pd.DataFrame(
-        [
-            {
-                "split": "test",
-                "is_novel": True,
-                "nearest_species": "Wrongus wrongus",
-                "true_species": "Truus truus",
-                "confidence_species": 0.91,
-                "predicted_rank": "family",
-            },
-            {
-                "split": "test",
-                "is_novel": True,
-                "nearest_species": "Truus truus",
-                "true_species": "Truus truus",
-                "confidence_species": 0.99,
-                "predicted_rank": "species",
-            },
-            {
-                "split": "val",
-                "is_novel": False,
-                "nearest_species": "Wrongus wrongus",
-                "true_species": "Truus truus",
-                "confidence_species": 0.95,
-                "predicted_rank": "species",
-            },
-        ]
-    )
-    cases = blast_lie_cases(df, limit=4)
-    assert len(cases) == 1
-    assert cases.iloc[0]["nearest_species"] == "Wrongus wrongus"
-
-
-def test_species_fcw_methods_abstain_when_not_committed():
-    df = pd.DataFrame(
-        {
-            "true_species": ["A", "B"],
-            "nearest_species": ["A", "X"],
-            "confidence_species": [0.9, 0.8],
-            "predicted_rank": ["species", "family"],
-        }
-    )
-    methods = species_fcw_methods(df)
-    _, y_fallback, _ = methods["hierarchical fallback"]
-    _, y_always, _ = methods["always-answer (species)"]
-    assert y_fallback[0] == "A"
-    assert y_fallback[1] is None
-    assert list(y_always) == ["A", "X"]
 
 
 def test_reliability_reports_prefers_recalibrated():

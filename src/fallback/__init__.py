@@ -9,7 +9,7 @@ standalone hybrid ensemble.
 Behavior: per-sample distance-to-centroid scoring at each taxonomic rank
 (species -> genus -> family -> order), with calibrated per-rank thresholds
 (set from the val split's in-distribution distance distribution), deciding
-whether to emit a confident species label or a "novel taxon, closest
-relative: X" flag -- always returning a full hierarchical confidence
-vector rather than a single label.
+whether to emit a confident species label or a "novel taxon" flag with
+the top-k nearest known species and genera -- always returning a full
+hierarchical confidence vector rather than a single label.
 """

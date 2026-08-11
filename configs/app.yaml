@@ -30,12 +30,19 @@ fallback:
   # Must match configs/eval.yaml so dashboard confidence matches the
   # benchmarked HierarchicalFallback (see sample_count_prior there).
   sample_count_prior: 5.0
+  # How many nearest known species *and* genera to attach to every
+  # prediction (surfaced on novel flags so "closest relative" is a
+  # ranked, inspectable list rather than a single name). Typical 3-5.
+  n_nearest_relatives: 5
 
 # Written by src/eval/benchmark.py; the dashboard renders coverage/accuracy
 # if this file exists (omits the table if missing).
 benchmark_results_path: data/eval_results/benchmark.json
 
-# Written by src/eval/validate_calibration.py. Reliability curve +
-# BLAST-lie gallery + FCW-vs-threshold chart omit themselves when absent.
-calibration_summary_path: data/eval_results/calibration/calibration.json
+# Written by src/eval/validate_calibration.py. Reliability curve omits itself
+# when this file is missing; held-out parquet is used to re-bin when present.
+calibration_results_path: data/eval_results/calibration/calibration.json
 calibration_predictions_path: data/eval_results/calibration/heldout_predictions.parquet
+
+# Written by src/eval/head_to_head.py. FCW-vs-threshold chart with method toggles.
+head_to_head_results_path: data/eval_results/head_to_head/head_to_head.json

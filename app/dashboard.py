@@ -3,7 +3,8 @@
 The page is a single vertical scroll. Color is taxonomic confidence as
 ocean depth -- species (trustworthy) is shallow seafoam, order (the last
 fallback) is deep navy -- the same cascade ``HierarchicalFallback`` uses.
-Only the depth-tree reveal animates; everything else stays quiet.
+Only the depth-tree reveal animates; calibration, BLAST-lie gallery, and
+false-confident-wrong charts stay quiet underneath.
 """
 
 from __future__ import annotations
@@ -21,24 +22,35 @@ import streamlit as st
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # allow `streamlit run app/dashboard.py`
 
+from app.dashboard_charts import (  # noqa: E402
+    fcw_at_threshold,
+    fcw_curve_frame,
+    live_reliability_reports,
+    reliability_frame,
+    reports_to_dicts,
+)
+from app.gallery_examples import BLAST_LIE_EXAMPLES, BlastLieExample  # noqa: E402
 from app.pipeline import (  # noqa: E402
     Pipeline,
-    RelativeHit,
     SequenceParseError,
     classify_sequence,
     clean_sequence_text,
     load_app_config,
     load_pipeline,
-    nearest_relatives,
 )
 from src.common import resolve_path  # noqa: E402
-from src.eval.compare_encoders import false_confident_wrong_rate  # noqa: E402
-from src.fallback.novelty import FallbackPrediction  # noqa: E402
+from src.fallback.novelty import FallbackPrediction, NeighborHit  # noqa: E402
 
 _RANKS = ("species", "genus", "family", "order")
 _RANK_INDEX = {rank: i for i, rank in enumerate(_RANKS)}
+_METHOD_OPTIONS = ("ours", "blast", "naive_bayes", "nearest_neighbor")
+_METHOD_LABELS = {
+    "ours": "ours",
+    "blast": "BLAST",
+    "naive_bayes": "Naive Bayes",
+    "nearest_neighbor": "1-NN",
+}
 
-# Ocean-depth tokens. Deeper = less certain, matching the fallback cascade.
 _SAND = "#F7F4EC"
 _NAVY = "#0A1F2E"
 _TEAL = "#1B5E6C"
@@ -56,6 +68,12 @@ _RANK_INK = {
     "genus": "#F7F4EC",
     "family": "#F7F4EC",
     "order": "#F7F4EC",
+}
+_METHOD_COLOR = {
+    "ours": _SEAFOAM,
+    "blast": _CORAL,
+    "naive_bayes": _TEAL,
+    "nearest_neighbor": _NAVY,
 }
 _TREE_REVEAL_MS = 250
 
@@ -139,11 +157,6 @@ div[data-testid="stTextArea"] label, div[data-testid="stTextInput"] label {{
   background: {_TEAL};
   color: {_SAND};
 }}
-div[data-testid="stAlert"] {{
-  background: transparent;
-  border: 1px solid {_TEAL};
-  color: {_INK};
-}}
 .specimen-seq {{
   font-family: "IBM Plex Mono", ui-monospace, monospace;
   letter-spacing: 0.16em;
@@ -155,14 +168,11 @@ div[data-testid="stAlert"] {{
   margin: 0.4rem 0 1.2rem 0;
   word-break: break-all;
 }}
-.depth-well {{
-  margin: 0.25rem 0 1.75rem 0;
-}}
 .panel-kicker {{
   font-size: 0.68rem;
   text-transform: uppercase;
   color: {_NAVY};
-  margin: 0 0 0.35rem 0;
+  margin: 1.4rem 0 0.35rem 0;
 }}
 .panel-lede {{
   font-size: 0.84rem;
@@ -338,6 +348,28 @@ def format_specimen_sequence(sequence: str, width: int = 60) -> str:
     return grouped
 
 
+def _hits_to_rows(hits: list[NeighborHit]) -> list[dict[str, object]]:
+    rows = []
+    for i, hit in enumerate(hits, start=1):
+        rows.append(
+            {
+                "Rank": i,
+                "Taxon rank": hit.rank.capitalize(),
+                "Label": hit.label,
+                "Genus": hit.genus,
+                "Family": hit.family,
+                "Distance": hit.distance,
+                "Support (n)": hit.support,
+            }
+        )
+    return rows
+
+
+def nearest_relatives_dataframe(prediction: FallbackPrediction) -> pd.DataFrame:
+    """Species then genera, each already ordered by distance at that rank."""
+    return pd.DataFrame(_hits_to_rows(prediction.nearest_species) + _hits_to_rows(prediction.nearest_genera))
+
+
 def load_json_if_exists(path_str: str) -> Any | None:
     path = resolve_path(path_str)
     if not path.exists():
@@ -346,32 +378,27 @@ def load_json_if_exists(path_str: str) -> Any | None:
         return json.load(fh)
 
 
-def load_predictions_if_exists(path_str: str) -> pd.DataFrame | None:
-    path = resolve_path(path_str)
-    if not path.exists():
-        return None
-    return pd.read_parquet(path)
-
-
 def reliability_reports(summary: dict[str, Any]) -> list[dict[str, Any]]:
     recalibrated = summary.get("recalibrated") or {}
     reports = recalibrated.get("reports") or (summary.get("raw") or {}).get("reports") or []
     return [r for r in reports if r.get("rank") in _RANKS]
 
 
-def draw_reliability_chart(reports: list[dict[str, Any]]):
+def draw_reliability_chart(frame: pd.DataFrame):
     fig, ax = plt.subplots(figsize=(5.2, 4.4), facecolor=_SAND)
     ax.set_facecolor(_SAND)
     ax.plot([0, 1], [0, 1], linestyle="--", color=_NAVY, linewidth=1.0, alpha=0.35, label="perfect")
-    for report in reports:
-        rank = report["rank"]
-        xs = [b["mean_confidence"] for b in report["bins"] if b.get("count", 0) > 0]
-        ys = [b["accuracy"] for b in report["bins"] if b.get("count", 0) > 0]
-        if not xs:
-            continue
-        ece = report.get("ece")
-        label = f"{rank}" + (f"  ECE {ece:.3f}" if ece is not None else "")
-        ax.plot(xs, ys, marker="o", linewidth=1.8, color=_RANK_BAND[rank], label=label)
+    for rank, group in frame.groupby("rank", sort=False):
+        ece = group["ece"].iloc[0] if "ece" in group.columns else float("nan")
+        label = f"{rank}" + (f"  ECE {ece:.3f}" if np.isfinite(ece) else "")
+        ax.plot(
+            group["mean_confidence"],
+            group["accuracy"],
+            marker="o",
+            linewidth=1.8,
+            color=_RANK_BAND.get(str(rank), _TEAL),
+            label=label,
+        )
     ax.set_xlim(0.0, 1.0)
     ax.set_ylim(0.0, 1.0)
     ax.set_xlabel("Predicted confidence (bin mean)")
@@ -385,40 +412,17 @@ def draw_reliability_chart(reports: list[dict[str, Any]]):
     return fig
 
 
-def fcw_series(
-    y_true: np.ndarray,
-    y_pred: np.ndarray,
-    scores: np.ndarray,
-    thresholds: np.ndarray,
-) -> np.ndarray:
-    return np.array(
-        [false_confident_wrong_rate(y_true, y_pred, scores, float(t)) for t in thresholds],
-        dtype=np.float64,
-    )
-
-
-def species_fcw_methods(heldout: pd.DataFrame) -> dict[str, tuple[np.ndarray, np.ndarray, np.ndarray]]:
-    """Species-level FCW ingredients for fallback vs always-answer."""
-    y_true = heldout["true_species"].to_numpy()
-    nearest = heldout["nearest_species"].to_numpy()
-    scores = heldout["confidence_species"].to_numpy(dtype=np.float64)
-    committed = heldout["predicted_rank"].to_numpy() == "species"
-    y_fallback = np.array([n if c else None for n, c in zip(nearest, committed)], dtype=object)
-    return {
-        "hierarchical fallback": (y_true, y_fallback, scores),
-        "always-answer (species)": (y_true, nearest, scores),
-    }
-
-
-def draw_fcw_chart(thresholds: np.ndarray, series: dict[str, np.ndarray]):
+def draw_fcw_chart(curve_df: pd.DataFrame):
     fig, ax = plt.subplots(figsize=(7.2, 3.8), facecolor=_SAND)
     ax.set_facecolor(_SAND)
-    colors = {
-        "hierarchical fallback": _SEAFOAM,
-        "always-answer (species)": _CORAL,
-    }
-    for name, ys in series.items():
-        ax.plot(thresholds, ys, linewidth=2.0, color=colors.get(name, _TEAL), label=name)
+    for method, group in curve_df.groupby("method", sort=False):
+        ax.plot(
+            group["threshold"],
+            group["fcw"],
+            linewidth=2.0,
+            color=_METHOD_COLOR.get(str(method), _TEAL),
+            label=group["label"].iloc[0],
+        )
     ax.set_xlabel("Confidence threshold")
     ax.set_ylabel("False-confident-wrong rate")
     ax.set_title("False-confident-wrong rate vs. threshold (held-out genera)")
@@ -432,20 +436,13 @@ def draw_fcw_chart(thresholds: np.ndarray, series: dict[str, np.ndarray]):
     return fig
 
 
-def blast_lie_cases(heldout: pd.DataFrame, limit: int = 4) -> pd.DataFrame:
-    """Held-out queries where a species-level identity call would name the wrong known species."""
-    novel = heldout.copy()
-    if "split" in novel.columns:
-        novel = novel[novel["split"] == "test"]
-    wrong = novel["nearest_species"] != novel["true_species"]
-    confident = novel["confidence_species"] >= 0.5
-    flagged = (
-        novel["is_novel"].astype(bool)
-        if "is_novel" in novel.columns
-        else pd.Series(True, index=novel.index)
-    )
-    picked = novel[wrong & confident & flagged].sort_values("confidence_species", ascending=False)
-    return picked.head(limit)
+def _format_metric_with_ci(value: float | None, ci: list | None) -> str | None:
+    if value is None:
+        return None
+    text = f"{value:.3f}"
+    if ci and len(ci) == 2 and ci[0] is not None and ci[1] is not None:
+        text += f" [{ci[0]:.3f}-{ci[1]:.3f}]"
+    return text
 
 
 def _render_header(pipeline: Pipeline | None) -> None:
@@ -471,7 +468,7 @@ def _render_header(pipeline: Pipeline | None) -> None:
     )
 
 
-def _render_classify(pipeline: Pipeline) -> tuple[FallbackPrediction | None, list[RelativeHit]]:
+def _render_classify(pipeline: Pipeline) -> FallbackPrediction | None:
     raw_text = st.text_area(
         "Sequence",
         height=120,
@@ -483,139 +480,147 @@ def _render_classify(pipeline: Pipeline) -> tuple[FallbackPrediction | None, lis
     lon_text = col2.text_input("Longitude (optional)", value="")
 
     if not st.button("Identify this specimen", type="primary"):
-        return None, []
+        return None
 
     try:
         sequence = clean_sequence_text(raw_text)
     except SequenceParseError as exc:
         st.error(str(exc))
-        return None, []
+        return None
 
     lat = float(lat_text) if lat_text.strip() else None
     lon = float(lon_text) if lon_text.strip() else None
     if (lat is None) != (lon is None):
         st.error("Provide both latitude and longitude, or leave both blank.")
-        return None, []
+        return None
 
     prediction = classify_sequence(pipeline, sequence, lat, lon)
-    relatives = nearest_relatives(pipeline, sequence, lat, lon, k=5)
-
     st.markdown(
         f'<div class="specimen-seq">{html.escape(format_specimen_sequence(sequence))}</div>',
         unsafe_allow_html=True,
     )
-
     if prediction.is_novel:
         st.warning(
             f"Novel taxon — closest known relative: {prediction.closest_relative_species}."
         )
     else:
         st.success(f"Resolved at species: {prediction.species}")
-
     st.markdown(build_depth_tree_html(prediction), unsafe_allow_html=True)
-    return prediction, relatives
+    return prediction
 
 
-def _render_relatives(prediction: FallbackPrediction, relatives: list[RelativeHit]) -> None:
-    if not prediction.is_novel or not relatives:
+def _render_relatives(prediction: FallbackPrediction) -> None:
+    if not prediction.is_novel:
         return
     st.markdown('<p class="panel-kicker">Nearest relatives</p>', unsafe_allow_html=True)
     st.markdown(
-        '<p class="panel-lede">Top known species by the same distance the cascade '
-        "used. Shown because this read was flagged novel.</p>",
+        '<p class="panel-lede">Top known species and genera by the same distance '
+        "the cascade used. Distances are per-rank and not comparable across ranks.</p>",
         unsafe_allow_html=True,
     )
-    for hit in relatives:
-        lineage = " · ".join(part for part in (hit.genus, hit.family, hit.order) if part)
-        st.markdown(
-            f'<div class="relative-row"><span class="name">{html.escape(hit.species)}</span>'
-            f'<div class="mono-quiet">d={hit.distance:.3f} · n={hit.support}'
-            f'{" · " + html.escape(lineage) if lineage else ""}</div></div>',
-            unsafe_allow_html=True,
-        )
-
-
-def _render_calibration(summary: dict[str, Any] | None) -> None:
-    if summary is None:
+    table = nearest_relatives_dataframe(prediction)
+    if table.empty:
         return
-    reports = reliability_reports(summary)
+    st.dataframe(
+        table,
+        column_config={
+            "Distance": st.column_config.NumberColumn("Distance (scaled)", format="%.3f"),
+            "Support (n)": st.column_config.NumberColumn("Support (n)"),
+        },
+        hide_index=True,
+        width="stretch",
+    )
+
+
+def _render_calibration(config: dict[str, Any]) -> None:
+    summary = load_json_if_exists(
+        config.get("calibration_results_path", "data/eval_results/calibration/calibration.json")
+    )
+    predictions_path = resolve_path(
+        config.get("calibration_predictions_path", "data/eval_results/calibration/heldout_predictions.parquet")
+    )
+    reports: list[dict[str, Any]] = []
+    if predictions_path.exists():
+        heldout = pd.read_parquet(predictions_path)
+        n_bins = int((summary or {}).get("n_bins", 10))
+        reports = reports_to_dicts(live_reliability_reports(heldout, n_bins=n_bins))
+    elif summary is not None:
+        reports = reliability_reports(summary)
     if not reports:
+        return
+    frame = reliability_frame(reports)
+    if frame.empty:
         return
     st.markdown('<p class="panel-kicker">Calibration</p>', unsafe_allow_html=True)
     st.markdown(
         '<p class="panel-lede">Does reported confidence mean what it says? '
-        "Each rank is the same depth color as the tree. Source: held-out genera, "
-        "reliability bins from validate_calibration.</p>",
+        "Each rank uses the same depth color as the tree. Source: held-out genera.</p>",
         unsafe_allow_html=True,
     )
-    fig = draw_reliability_chart(reports)
+    fig = draw_reliability_chart(frame)
     st.pyplot(fig, width="stretch")
     plt.close(fig)
 
 
-def _render_blast_gallery(heldout: pd.DataFrame | None) -> None:
-    if heldout is None or heldout.empty:
-        return
-    cases = blast_lie_cases(heldout)
-    if cases.empty:
-        return
+def _render_blast_gallery() -> None:
     st.markdown('<p class="panel-kicker">BLAST would have lied to you</p>', unsafe_allow_html=True)
     st.markdown(
-        '<p class="panel-lede">Held-out genera: a species-level identity call '
-        "(BLAST’s failure mode) names the nearest known species with high "
-        "confidence. Coral marks the wrong confident call. We flagged novelty "
-        "instead.</p>",
+        '<p class="panel-lede">Held-out genera: BLAST names a seen sister-genus '
+        "species with high identity. Coral marks the wrong confident call. "
+        "We flagged novelty and listed nearest known relatives instead.</p>",
         unsafe_allow_html=True,
     )
-    cards: list[str] = []
-    for _, row in cases.iterrows():
-        rank = row.get("predicted_rank") or "unresolved"
-        cards.append(
-            '<div class="lie-card">'
+    for example in BLAST_LIE_EXAMPLES:
+        _render_lie_example(example)
+
+
+def _render_lie_example(example: BlastLieExample) -> None:
+    rank = example.ours_predicted_rank or "unresolved"
+    with st.expander(f"{example.true_species}  ·  BLAST named {example.blast_species}"):
+        st.markdown(
             f'<div class="coral-flag">wrong species call</div>'
-            f'<div class="name">{html.escape(str(row["nearest_species"]))}</div>'
-            f'<div class="mono-quiet">species confidence {float(row["confidence_species"]) * 100:.0f}%</div>'
-            f'<div class="mono-quiet" style="margin-top:0.4rem">true · {html.escape(str(row["true_species"]))}</div>'
+            f'<div class="name">{html.escape(example.blast_species)}</div>'
+            f'<div class="mono-quiet">{example.blast_pident:.1f}% identity · '
+            f'bitscore {example.blast_bitscore:.0f}</div>'
+            f'<div class="mono-quiet" style="margin-top:0.4rem">true · '
+            f'{html.escape(example.true_species)}</div>'
             f'<div class="mono-quiet">ours · {html.escape(str(rank))}</div>'
-            "</div>"
+            f'<div class="specimen-seq">{html.escape(format_specimen_sequence(example.sequence))}</div>',
+            unsafe_allow_html=True,
         )
-    st.markdown(f'<div class="lie-grid">{"".join(cards)}</div>', unsafe_allow_html=True)
 
 
-def _render_fcw(heldout: pd.DataFrame | None) -> None:
-    if heldout is None or heldout.empty:
+def _render_fcw(config: dict[str, Any]) -> None:
+    payload = load_json_if_exists(
+        config.get("head_to_head_results_path", "data/eval_results/head_to_head/head_to_head.json")
+    )
+    if not payload:
         return
-    data = heldout
-    if "split" in data.columns:
-        data = data[data["split"] == "test"]
-    if data.empty or "true_species" not in data.columns:
-        return
-
     st.markdown('<p class="panel-kicker">Benchmark · false-confident-wrong</p>', unsafe_allow_html=True)
     st.markdown(
-        '<p class="panel-lede">Rate of wrong species names issued at or above a '
-        "confidence threshold, on held-out genera. Toggle the always-answer "
-        "curve to see the BLAST / Naive-Bayes failure mode against the cascade.</p>",
+        '<p class="panel-lede">Wrong species names issued at or above a confidence '
+        "threshold, on held-out genera. Toggle methods against the cascade.</p>",
         unsafe_allow_html=True,
     )
-    methods = species_fcw_methods(data)
     selected = st.multiselect(
         "Methods",
-        options=list(methods.keys()),
-        default=list(methods.keys()),
+        options=list(_METHOD_OPTIONS),
+        default=["ours", "blast"],
+        format_func=lambda key: _METHOD_LABELS[key],
         label_visibility="collapsed",
     )
+    threshold = st.slider("Confidence threshold", min_value=0.0, max_value=1.0, value=0.5, step=0.05)
     if not selected:
         return
-    thresholds = np.linspace(0.0, 1.0, 21)
-    series = {
-        name: fcw_series(y_true, y_pred, scores, thresholds)
-        for name in selected
-        for y_true, y_pred, scores in [methods[name]]
-    }
-    fig = draw_fcw_chart(thresholds, series)
+    curve = fcw_curve_frame(payload, rank="species", subset="novel", methods=selected)
+    if curve.empty:
+        return
+    fig = draw_fcw_chart(curve)
     st.pyplot(fig, width="stretch")
     plt.close(fig)
+    at_t = fcw_at_threshold(curve, threshold)
+    if not at_t.empty:
+        st.dataframe(at_t, hide_index=True, width="stretch")
 
 
 def _render_benchmark_table(results: list[dict[str, Any]] | None) -> None:
@@ -652,15 +657,6 @@ def _render_benchmark_table(results: list[dict[str, Any]] | None) -> None:
         st.dataframe(pd.DataFrame(rows).set_index("system"), width="stretch")
 
 
-def _format_metric_with_ci(value: float | None, ci: list | None) -> str | None:
-    if value is None:
-        return None
-    text = f"{value:.3f}"
-    if ci and len(ci) == 2 and ci[0] is not None and ci[1] is not None:
-        text += f" [{ci[0]:.3f}-{ci[1]:.3f}]"
-    return text
-
-
 def main() -> None:
     st.set_page_config(page_title="eDNA specimen record", layout="centered")
     _inject_theme()
@@ -670,7 +666,6 @@ def main() -> None:
     _render_header(pipeline)
 
     prediction: FallbackPrediction | None = None
-    relatives: list[RelativeHit] = []
     if pipeline is None:
         st.warning(
             "No reference data found at "
@@ -678,35 +673,22 @@ def main() -> None:
             "`python -m src.ingest.fetch_bold` and `python -m src.preprocess.clean` first."
         )
     else:
-        prediction, relatives = _render_classify(pipeline)
+        prediction = _render_classify(pipeline)
 
-    calibration_path = config.get(
-        "calibration_summary_path", "data/eval_results/calibration/calibration.json"
-    )
-    predictions_path = config.get(
-        "calibration_predictions_path",
-        "data/eval_results/calibration/heldout_predictions.parquet",
-    )
-    benchmark_path = config.get("benchmark_results_path", "data/eval_results/benchmark.json")
-
-    summary = load_json_if_exists(calibration_path)
-    heldout = load_predictions_if_exists(predictions_path)
-    benchmark = load_json_if_exists(benchmark_path)
-
-    show_relatives = prediction is not None and prediction.is_novel and bool(relatives)
+    show_relatives = prediction is not None and prediction.is_novel
     if show_relatives:
         cal_col, rel_col = st.columns(2)
         with cal_col:
-            _render_calibration(summary)
+            _render_calibration(config)
         with rel_col:
             assert prediction is not None
-            _render_relatives(prediction, relatives)
+            _render_relatives(prediction)
     else:
-        _render_calibration(summary)
+        _render_calibration(config)
 
-    _render_blast_gallery(heldout)
-    _render_fcw(heldout)
-    _render_benchmark_table(benchmark)
+    _render_blast_gallery()
+    _render_fcw(config)
+    _render_benchmark_table(load_json_if_exists(config.get("benchmark_results_path", "data/eval_results/benchmark.json")))
 
 
 if __name__ == "__main__":

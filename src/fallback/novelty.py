@@ -7,8 +7,9 @@ correctly 0% in the Step 4 validation. This module instead cascades
 species -> genus -> family -> order, stopping at the first rank whose
 nearest-centroid distance is within a *calibrated* threshold for that
 rank, and otherwise flags the query as novel -- while always reporting the
-single nearest known species as a "closest relative" hint, per the
-project's "novel taxon, closest relative: X" spec.
+top-k nearest known species *and* genera (by the same combined distance
+the cascade uses), so a "closest relative" claim is inspectable rather
+than a single black-box name.
 
 Note on distance scaling: unlike ``Paper2Classifier`` (which only needs
 the *argmin* across candidates and so can get away with per-query min-max
@@ -47,6 +48,25 @@ import pandas as pd
 from src.model.classifier import _haversine_km
 
 _RANKS = ("species", "genus", "family", "order")
+_DEFAULT_N_NEAREST = 5
+
+
+@dataclass(frozen=True)
+class NeighborHit:
+    """One known centroid, ranked by combined seq/geo distance at its rank.
+
+    Distances are *not* comparable across ranks (each rank has its own
+    between-centroid scale); inspect ``nearest_species`` and
+    ``nearest_genera`` as two separate ordered lists.
+    """
+
+    label: str
+    rank: str
+    distance: float
+    support: int
+    genus: str | None = None
+    family: str | None = None
+    order: str | None = None
 
 
 @dataclass
@@ -63,6 +83,10 @@ class FallbackPrediction:
     rank (used to deflate ``confidence`` for thinly sampled centroids).
     ``nearest`` is the nearest training label at each rank regardless of
     whether the cascade committed there (needed for confidence calibration).
+    ``nearest_species`` / ``nearest_genera`` are the top-k known centroids
+    at those ranks (always filled; the dashboard surfaces them when the
+    read is flagged novel). ``closest_relative_species`` is the top species
+    hit, kept for the original "novel taxon, closest relative: X" phrasing.
     """
 
     predicted_rank: str | None
@@ -76,6 +100,8 @@ class FallbackPrediction:
     distance: dict[str, float]
     support: dict[str, int]
     nearest: dict[str, str]
+    nearest_species: list[NeighborHit]
+    nearest_genera: list[NeighborHit]
 
 
 @dataclass
@@ -124,6 +150,7 @@ class HierarchicalFallback:
         geo_weight: float = 0.2,
         rank_percentile: float = 90.0,
         sample_count_prior: float = 5.0,
+        n_nearest_relatives: int = _DEFAULT_N_NEAREST,
     ) -> None:
         total = seq_weight + geo_weight
         self.seq_weight = seq_weight / total
@@ -132,15 +159,15 @@ class HierarchicalFallback:
         if sample_count_prior < 0:
             raise ValueError("sample_count_prior must be >= 0")
         self.sample_count_prior = float(sample_count_prior)
+        if n_nearest_relatives < 1:
+            raise ValueError("n_nearest_relatives must be >= 1")
+        self.n_nearest_relatives = int(n_nearest_relatives)
 
         self._rank_centroids: dict[str, _RankCentroidSet] = {}
         self._species_taxonomy: dict[str, tuple[str, str, str]] = {}
         self._genus_taxonomy: dict[str, tuple[str, str]] = {}
         self._family_taxonomy: dict[str, str] = {}
         self.thresholds_: dict[str, float] | None = None
-        # Optional post-hoc maps from raw distance-confidence -> P(correct),
-        # fit by ``src.eval.calibration`` when ECE is too high. Applied only to
-        # reported confidence; cascade commit decisions still use thresholds.
         self._probability_calibrators: dict[str, Any] | None = None
 
     def set_probability_calibrators(self, calibrators: dict[str, Any] | None) -> "HierarchicalFallback":
@@ -227,32 +254,43 @@ class HierarchicalFallback:
         best_idx = int(np.argmin(combined))
         return centroids.labels[best_idx], float(combined[best_idx]), int(centroids.n_samples[best_idx])
 
-    def nearest_k_at_rank(
-        self,
-        rank: str,
-        embedding: np.ndarray,
-        latlon_row: np.ndarray | None = None,
-        k: int = 5,
-    ) -> list[tuple[str, float, int]]:
-        """Top-``k`` labels at ``rank`` by the same distance the cascade uses."""
-        if not self._rank_centroids:
-            raise RuntimeError("HierarchicalFallback.fit() must be called before nearest_k_at_rank()")
-        if k < 1:
-            raise ValueError("k must be >= 1")
-
+    def _k_nearest_at_rank(
+        self, rank: str, embedding: np.ndarray, latlon_row: np.ndarray | None, k: int
+    ) -> list[NeighborHit]:
         centroids = self._rank_centroids[rank]
         combined = self._combined_distances(rank, embedding, latlon_row)
-        order = np.argsort(combined)
-        hits: list[tuple[str, float, int]] = []
-        for idx in order[: min(k, len(order))]:
-            hits.append(
-                (
-                    centroids.labels[int(idx)],
-                    float(combined[int(idx)]),
-                    int(centroids.n_samples[int(idx)]),
-                )
-            )
-        return hits
+        n = len(centroids.labels)
+        take = min(k, n)
+        if take <= 0:
+            return []
+        idx = np.argpartition(combined, take - 1)[:take]
+        idx = idx[np.argsort(combined[idx], kind="stable")]
+        return [self._neighbor_hit(rank, int(i), float(combined[i])) for i in idx]
+
+    def _neighbor_hit(self, rank: str, index: int, distance: float) -> NeighborHit:
+        centroids = self._rank_centroids[rank]
+        label = centroids.labels[index]
+        support = int(centroids.n_samples[index])
+        genus = family = order = None
+        if rank == "species":
+            genus, family, order = self._species_taxonomy[label]
+        elif rank == "genus":
+            genus = label
+            family, order = self._genus_taxonomy[label]
+        elif rank == "family":
+            family = label
+            order = self._family_taxonomy[label]
+        elif rank == "order":
+            order = label
+        return NeighborHit(
+            label=label,
+            rank=rank,
+            distance=distance,
+            support=support,
+            genus=genus,
+            family=family,
+            order=order,
+        )
 
     def calibrate(
         self,
@@ -354,11 +392,18 @@ class HierarchicalFallback:
             elif predicted_rank == "order":
                 order = nearest["order"][0]
 
+            nearest_species = self._k_nearest_at_rank(
+                "species", embeddings[q], latlon_row, self.n_nearest_relatives
+            )
+            nearest_genera = self._k_nearest_at_rank(
+                "genus", embeddings[q], latlon_row, self.n_nearest_relatives
+            )
+
             predictions.append(
                 FallbackPrediction(
                     predicted_rank=predicted_rank,
                     is_novel=(predicted_rank != "species"),
-                    closest_relative_species=nearest["species"][0],
+                    closest_relative_species=nearest_species[0].label,
                     species=species,
                     genus=genus,
                     family=family,
@@ -367,6 +412,8 @@ class HierarchicalFallback:
                     distance={rank: nearest[rank][1] for rank in _RANKS},
                     support=support,
                     nearest=nearest_labels,
+                    nearest_species=nearest_species,
+                    nearest_genera=nearest_genera,
                 )
             )
 

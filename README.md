@@ -4,8 +4,9 @@ Zero-shot eDNA species annotation with an honest fallback: instead of
 failing outright when a read doesn't match any known reference sequence
 (the failure mode of exact-match tools like BLAST/QIIME2), this system
 always returns a usable, ranked answer -- either a confident species call,
-or a "novel taxon, closest relative: X" flag with a hierarchical confidence
-score at each taxonomic rank (species -> genus -> family -> order).
+or a "novel taxon" flag with the top-k nearest known species/genera and a
+hierarchical confidence score at each taxonomic rank (species -> genus ->
+family -> order).
 
 **Current status: all 8 steps of the build plan are implemented and
 validated end-to-end** -- ingestion, cleaning, clade-exclusion splitting,
@@ -22,7 +23,8 @@ see [Roadmap](#roadmap).
 - **Novel component** (adapted from Paper 3: Algorithms/MDPI, Feb 2025):
   a hierarchical fallback + novelty-flagging layer sitting after
   classification, deciding per-sample whether to output a confident label
-  or a flagged "closest relative" with per-rank confidence.
+  or a flagged novel taxon with the top-k nearest known relatives and
+  per-rank confidence.
 - **Robustness insight** (Paper 1: IEEE Access 2024,
   [DOI 10.1109/ACCESS.2024.3450016](https://doi.org/10.1109/ACCESS.2024.3450016)):
   informs handling of messy/incomplete input data throughout.
@@ -47,8 +49,9 @@ The hierarchical fallback (`src/fallback/novelty.py`) sits after that base
 classifier: it cascades species -> genus -> family -> order, committing to
 the deepest rank whose nearest-centroid distance is within a threshold
 calibrated (per rank) from the validation split, and otherwise flags the
-query as novel -- while always reporting the single nearest known species
-as a "closest relative" hint, with a confidence score at every rank.
+query as novel -- while always reporting the top-k nearest known species
+and genera (by distance) so the "closest relative" claim is inspectable,
+with a confidence score at every rank.
 
 ## Repo layout
 
@@ -64,8 +67,9 @@ edna-classifier/
     model/             # Paper2Classifier: taxonomy+geo nearest-centroid (implemented)
     fallback/          # HierarchicalFallback: cascading novelty flagging (implemented)
     eval/              # clade-exclusion splitter, baseline/fallback validation,
-                       # confidence calibration (ECE/reliability), and the
-                       # BLAST/Naive-Bayes/1-NN benchmark (all implemented)
+                       # confidence calibration (ECE/reliability), BLAST/Naive-
+                       # Bayes/1-NN benchmark, and head-to-head accuracy/FCW
+                       # table+plot (all implemented)
     baselines/         # NaiveBayesBaseline, NearestNeighborBaseline, BlastBaseline
   app/                 # Streamlit dashboard: pipeline.py + dashboard.py (implemented)
   configs/             # YAML config per experiment
@@ -192,6 +196,17 @@ in [`configs/eval.yaml`](configs/eval.yaml)). The BLAST row requires
 local development, skipped with a logged warning if absent -- see
 `src/baselines/blast_baseline.py`).
 
+```bash
+# 6b. Standardized head-to-head on the same held-out splits: BLAST, Naive
+#     Bayes, 1-NN, and our system. Per method per rank: accuracy (abstention
+#     counts as wrong) and false-confident-wrong-call rate, also restricted
+#     to the novel/held-out-genera subset. Writes one table (method × rank
+#     × metric) and one plot (FCW rate vs. confidence threshold, one line
+#     per method). BLAST uses bitscore (e-value fallback) as its score.
+#     Writes data/eval_results/head_to_head/.
+python -m src.eval.head_to_head --config configs/eval.yaml
+```
+
 Reported confidence in the fallback (and dashboard) is distance-based
 confidence multiplied by sample-count reliability
 `n / (n + sample_count_prior)`, so thinly sampled centroids cannot look as
@@ -203,8 +218,8 @@ decisions still use raw distance vs. the calibrated threshold.
 ```bash
 # 7. Launch the interactive specimen record: paste a DNA sequence and get
 #    a hierarchical, novelty-aware prediction. Calibration, BLAST-lie
-#    cases, and false-confident-wrong curves render below when the Step 6/8
-#    eval artifacts exist.
+#    gallery, and false-confident-wrong curves render below when eval
+#    artifacts exist.
 streamlit run app/dashboard.py
 ```
 
@@ -225,6 +240,17 @@ a friendly "run ingestion first" message instead of crashing if the data
 isn't there yet. See [`configs/app.yaml`](configs/app.yaml) for why this
 uses a random validation split rather than the genus-exclusion splits in
 `configs/eval.yaml` -- the deployed model should use every known genus.
+
+Evidence panels (matched to the calibration / head-to-head / nearest-
+relative work, not a substitute for running those scripts):
+
+- **Calibration** reads `data/eval_results/calibration/calibration.json`
+  and, when `heldout_predictions.parquet` is present, re-bins the
+  reliability diagram live.
+- **BLAST would have lied** is five hardcoded 50% genus-holdout contrasts
+  (wrong-confident BLAST vs. honest fallback + top-k relatives).
+- **False-confident wrong** reads `data/eval_results/head_to_head/head_to_head.json`,
+  toggles methods, and slides the confidence threshold along the saved curve.
 
 ## Running tests
 

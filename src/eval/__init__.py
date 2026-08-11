@@ -21,4 +21,7 @@ Implemented:
   answered across all three holdout levels.
 - ``compare_encoders.py``: same ``HierarchicalFallback`` on identical
   splits, k-mer+PCA vs. the learned CNN (Step 1 ECE + Step 2 accuracy/FCW).
+- ``head_to_head.py``: standardized accuracy + false-confident-wrong-call
+  rate on identical splits (all queries and the novel/held-out-genera
+  subset), plus a false-confident-wrong-rate vs. threshold plot.
 """
