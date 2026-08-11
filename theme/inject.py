@@ -27,11 +27,11 @@ def load_css() -> str:
 
 
 def inject_theme() -> None:
-    """Fonts via <link>, widget overrides via a single style block."""
-    st.markdown(
-        f'<link rel="preconnect" href="https://fonts.googleapis.com">'
-        f'<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>'
-        f'<link href="{FONT_HREF}" rel="stylesheet">'
-        f"<style>{load_css()}</style>",
-        unsafe_allow_html=True,
-    )
+    """Load fonts + widget CSS via ``st.html``.
+
+    Streamlit 1.5x+ sanitizes ``st.markdown(..., unsafe_allow_html=True)``
+    and strips ``<style>``/``<link>``, which dumps the CSS onto the page as
+    text. ``st.html`` keeps a style-only block in the event container so it
+    does not take layout space.
+    """
+    st.html(f'<style>@import url("{FONT_HREF}");\n{load_css()}</style>')
