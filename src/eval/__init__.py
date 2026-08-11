@@ -19,8 +19,7 @@ Implemented:
 - ``benchmark.py``: runs the full Step 6 comparison -- our system vs. the
   three ``src/baselines`` -- reporting per-rank coverage + accuracy-among-
   answered across all three holdout levels.
-
-Not yet implemented: coverage/confidence *curves* (varying calibration
-thresholds and plotting the tradeoff) -- this pass reports point estimates
-at the currently-configured thresholds only.
+- ``head_to_head.py``: standardized accuracy + false-confident-wrong-call
+  rate on identical splits (all queries and the novel/held-out-genera
+  subset), plus a false-confident-wrong-rate vs. threshold plot.
 """

@@ -31,6 +31,10 @@ def test_fit_predict_returns_full_taxonomy_for_every_query():
         assert prediction.genus is not None
         assert prediction.family is not None
         assert prediction.order is not None
+        assert prediction.nearest["species"] == prediction.species
+        for rank in ("species", "genus", "family", "order"):
+            assert 0.0 <= prediction.confidence[rank] <= 1.0
+        assert prediction.confidence["order"] >= prediction.confidence["family"] >= prediction.confidence["genus"] >= prediction.confidence["species"]
 
 
 def test_predict_gives_full_coverage_regardless_of_query():

@@ -63,8 +63,9 @@ edna-classifier/
     model/             # Paper2Classifier: taxonomy+geo nearest-centroid (implemented)
     fallback/          # HierarchicalFallback: cascading novelty flagging (implemented)
     eval/              # clade-exclusion splitter, baseline/fallback validation,
-                       # confidence calibration (ECE/reliability), and the
-                       # BLAST/Naive-Bayes/1-NN benchmark (all implemented)
+                       # confidence calibration (ECE/reliability), BLAST/Naive-
+                       # Bayes/1-NN benchmark, and head-to-head accuracy/FCW
+                       # table+plot (all implemented)
     baselines/         # NaiveBayesBaseline, NearestNeighborBaseline, BlastBaseline
   app/                 # Streamlit dashboard: pipeline.py + dashboard.py (implemented)
   configs/             # YAML config per experiment
@@ -175,6 +176,17 @@ in [`configs/eval.yaml`](configs/eval.yaml)). The BLAST row requires
 `blastn`/`makeblastdb` on `PATH` (installed in Docker/CI; not required for
 local development, skipped with a logged warning if absent -- see
 `src/baselines/blast_baseline.py`).
+
+```bash
+# 6b. Standardized head-to-head on the same held-out splits: BLAST, Naive
+#     Bayes, 1-NN, and our system. Per method per rank: accuracy (abstention
+#     counts as wrong) and false-confident-wrong-call rate, also restricted
+#     to the novel/held-out-genera subset. Writes one table (method × rank
+#     × metric) and one plot (FCW rate vs. confidence threshold, one line
+#     per method). BLAST uses bitscore (e-value fallback) as its score.
+#     Writes data/eval_results/head_to_head/.
+python -m src.eval.head_to_head --config configs/eval.yaml
+```
 
 Reported confidence in the fallback (and dashboard) is distance-based
 confidence multiplied by sample-count reliability

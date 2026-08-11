@@ -67,6 +67,20 @@ calibration:
   auto_recalibrate: true
   output_dir: data/eval_results/calibration
 
+head_to_head:
+  # Operating-point threshold for the table's false-confident-wrong-call
+  # rate. The plot sweeps [0, 1] regardless.
+  default_confidence_threshold: 0.5
+  # Which saved split becomes the single published table + plot.
+  table_holdout_fraction: 0.5
+  plot_rank: species
+  plot_subset: novel
+  n_thresholds: 21
+  output_dir: data/eval_results/head_to_head
+  # BLAST confidence proxy: bitscore / (bitscore + offset). Smaller offset
+  # makes modest hits look more confident.
+  blast_bitscore_offset: 50.0
+
 baselines:
   naive_bayes:
     # k-mer size for the raw frequency vectors fed to MultinomialNB (mirrors
