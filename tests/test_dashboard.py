@@ -127,6 +127,14 @@ def isolated_project(tmp_path, monkeypatch):
     return tmp_path
 
 
+def test_dashboard_splits_into_identify_evidence_method_tabs(isolated_project):
+    at = AppTest.from_file(_DASHBOARD_PATH)
+    at.run(timeout=60)
+
+    assert not at.exception
+    assert [tab.label for tab in at.tabs] == ["Identify", "Evidence", "Method"]
+
+
 def test_dashboard_shows_missing_data_warning_when_no_sequences_file(isolated_project):
     at = AppTest.from_file(_DASHBOARD_PATH)
     at.run(timeout=60)
@@ -148,6 +156,11 @@ def test_dashboard_classifies_a_known_sequence(isolated_project):
     at.text_area[0].set_value(df.iloc[0]["sequence"])
     at.button[0].click().run(timeout=60)
 
+    assert not at.exception
+    assert len(at.success) + len(at.warning) >= 1
+
+    # Tabs rerun the script; the call must survive a second pass.
+    at.run(timeout=60)
     assert not at.exception
     assert len(at.success) + len(at.warning) >= 1
 
@@ -288,10 +301,16 @@ def test_rank_visual_state_marks_shallower_ranks_skipped():
 def test_depth_tree_html_includes_taxon_and_reveal_delays():
     html = build_depth_tree_html(_prediction())
     assert "Gadus" in html
-    assert "depth-rank" in html
-    assert "--delay:0ms" in html
+    assert "<svg" in html
+    assert "animation-delay:0ms" in html
+    assert "animation-delay:200ms" in html
+    assert "animation-delay:400ms" in html
+    assert "animation-delay:600ms" in html
     assert "is-committed" in html
     assert "is-skipped" in html
+    assert "stroke-dasharray" in html
+    assert "unresolved" in html
+    assert "@keyframes tree-reveal" in html
 
 
 def test_format_specimen_sequence_groups_bases():

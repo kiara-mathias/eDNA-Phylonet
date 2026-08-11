@@ -4,11 +4,10 @@
   ``HierarchicalFallback``, fit on nearly all known reference data, with a
   small random -- not clade-excluded -- validation slice for threshold
   calibration) and cleans pasted sequence/FASTA text.
-- ``dashboard.py``: Classify + Benchmark tabs, plus Step 1–3 evidence
-  panels (live calibration curve, BLAST-vs-fallback gallery, interactive
-  false-confident-wrong chart). ``gallery_examples.py`` holds the
-  hardcoded held-out contrasts; ``dashboard_charts.py`` is the testable
-  chart math.
+- ``dashboard.py``: Identify / Evidence / Method tabs (live classification,
+  calibration + BLAST-lie gallery, FCW + clade-exclusion tables).
+  ``gallery_examples.py`` holds the hardcoded held-out contrasts;
+  ``dashboard_charts.py`` is the testable chart math.
 
 There's no separately-trained model to pull from external storage (unlike
 a typical deep learning deployment) -- the k-mer+PCA encoder and

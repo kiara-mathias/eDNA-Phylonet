@@ -1,0 +1,258 @@
+/* eDNA specimen record — kill the default Streamlit chrome.
+   Targets data-testid / .st* classes (stable enough across 1.4x–1.60). */
+
+html, body, [data-testid="stAppViewContainer"], .stApp {
+  background: var(--edna-sand);
+  color: var(--edna-ink);
+  font-family: Inter, "Segoe UI", sans-serif;
+}
+
+[data-testid="stHeader"],
+[data-testid="stToolbar"],
+[data-testid="stDecoration"],
+#MainMenu,
+footer {
+  visibility: hidden;
+  height: 0;
+}
+
+[data-testid="stSidebar"] { display: none; }
+
+.block-container {
+  max-width: 880px;
+  padding-top: 1.25rem;
+  padding-bottom: 4rem;
+}
+
+h1, h2, h3, .record-kicker, .panel-kicker {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  letter-spacing: 0.04em;
+}
+
+/* --- stTextInput / stTextArea --- */
+[data-testid="stTextInput"] label,
+[data-testid="stTextArea"] label,
+[data-testid="stNumberInput"] label,
+div[data-testid="stTextInput"] label,
+div[data-testid="stTextArea"] label {
+  font-family: "IBM Plex Mono", ui-monospace, monospace !important;
+  font-size: 0.72rem !important;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--edna-navy) !important;
+}
+
+[data-testid="stTextInput"] input,
+[data-testid="stNumberInput"] input,
+[data-testid="stTextInput"] [data-baseweb="input"] {
+  background: var(--edna-sand) !important;
+  color: var(--edna-ink) !important;
+  border-color: color-mix(in srgb, var(--edna-navy) 22%, transparent) !important;
+  font-family: "IBM Plex Mono", ui-monospace, monospace !important;
+  border-radius: 6px !important;
+}
+
+[data-testid="stTextArea"] textarea,
+textarea {
+  font-family: "IBM Plex Mono", ui-monospace, monospace !important;
+  letter-spacing: 0.12em !important;
+  font-size: 0.82rem !important;
+  background: var(--edna-sand) !important;
+  color: var(--edna-ink) !important;
+  border-radius: 6px !important;
+}
+
+[data-testid="stTextInput"] [data-baseweb="input"]:focus-within,
+[data-testid="stTextArea"] textarea:focus {
+  border-color: var(--edna-seafoam) !important;
+  box-shadow: 0 0 0 1px var(--edna-seafoam) !important;
+}
+
+/* --- stButton --- */
+.stButton > button,
+[data-testid="stBaseButton-primary"],
+[data-testid="stBaseButton-secondary"],
+[data-testid="stButton"] button {
+  background: var(--edna-seafoam) !important;
+  color: var(--edna-navy) !important;
+  border: 0 !important;
+  border-radius: 6px !important;
+  font-family: "IBM Plex Mono", ui-monospace, monospace !important;
+  letter-spacing: 0.06em;
+  font-weight: 500 !important;
+}
+
+.stButton > button:hover,
+[data-testid="stBaseButton-primary"]:hover,
+[data-testid="stBaseButton-secondary"]:hover,
+[data-testid="stButton"] button:hover {
+  background: var(--edna-teal) !important;
+  color: var(--edna-sand) !important;
+}
+
+/* --- stAlert --- */
+[data-testid="stAlert"] {
+  border-radius: 8px !important;
+  border: 1px solid color-mix(in srgb, var(--edna-navy) 14%, transparent) !important;
+  background: color-mix(in srgb, var(--edna-sand) 88%, var(--edna-navy)) !important;
+  font-family: Inter, "Segoe UI", sans-serif;
+}
+
+[data-testid="stAlertContentSuccess"] {
+  border-left: 3px solid var(--edna-seafoam) !important;
+}
+
+[data-testid="stAlertContentWarning"],
+[data-testid="stAlertContentError"] {
+  border-left: 3px solid var(--edna-coral) !important;
+}
+
+[data-testid="stAlertContentInfo"] {
+  border-left: 3px solid var(--edna-teal) !important;
+}
+
+/* --- stDataFrame --- */
+[data-testid="stDataFrame"],
+[data-testid="stDataFrameResizable"],
+.stDataFrame {
+  border: 1px solid color-mix(in srgb, var(--edna-navy) 16%, transparent) !important;
+  border-radius: 8px !important;
+  overflow: hidden;
+  background: var(--edna-sand) !important;
+}
+
+[data-testid="stDataFrame"] [data-testid="stDataFrameGlideDataEditor"],
+.stDataFrame [role="grid"] {
+  font-family: Inter, "Segoe UI", sans-serif;
+}
+
+/* --- stTabs (ready for the Identify / Evidence / Method split) --- */
+[data-testid="stTabs"] [data-baseweb="tab-list"],
+.stTabs [data-baseweb="tab-list"] {
+  gap: 0.15rem;
+  background: transparent !important;
+  border-bottom: 1px solid color-mix(in srgb, var(--edna-navy) 16%, transparent);
+}
+
+[data-testid="stTabs"] button[data-baseweb="tab"],
+[data-testid="stTab"],
+.stTabs [data-baseweb="tab"] {
+  font-family: "IBM Plex Mono", ui-monospace, monospace !important;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  font-size: 0.72rem !important;
+  color: color-mix(in srgb, var(--edna-navy) 55%, transparent) !important;
+  background: transparent !important;
+}
+
+[data-testid="stTabs"] button[aria-selected="true"],
+.stTabs [aria-selected="true"] {
+  color: var(--edna-navy) !important;
+  border-bottom: 2px solid var(--edna-seafoam) !important;
+}
+
+/* --- page chrome used by the specimen record --- */
+.record-header {
+  background: var(--edna-navy);
+  color: var(--edna-sand);
+  padding: 1.35rem 1.4rem 1.2rem;
+  margin: 0 0 1.5rem 0;
+}
+
+.record-kicker {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  opacity: 0.7;
+  margin: 0 0 0.35rem 0;
+}
+
+.record-header h1 {
+  font-size: 1.35rem;
+  font-weight: 500;
+  margin: 0 0 0.45rem 0;
+  color: var(--edna-sand);
+}
+
+.record-header p {
+  margin: 0;
+  font-family: Inter, sans-serif;
+  font-size: 0.92rem;
+  line-height: 1.45;
+  color: var(--edna-sand);
+  opacity: 0.88;
+}
+
+.record-meta {
+  margin-top: 0.75rem;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  opacity: 0.65;
+}
+
+.specimen-seq {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  letter-spacing: 0.16em;
+  font-size: 0.78rem;
+  line-height: 1.7;
+  color: var(--edna-navy);
+  border: 1px solid color-mix(in srgb, var(--edna-navy) 13%, transparent);
+  padding: 0.7rem 0.85rem;
+  margin: 0.4rem 0 1.2rem 0;
+  word-break: break-all;
+}
+
+.panel-kicker {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  color: var(--edna-navy);
+  margin: 1.4rem 0 0.35rem 0;
+}
+
+.panel-lede {
+  font-size: 0.84rem;
+  color: var(--edna-ink);
+  opacity: 0.78;
+  margin: 0 0 0.85rem 0;
+}
+
+.relative-row, .lie-card {
+  border-top: 1px solid color-mix(in srgb, var(--edna-navy) 9%, transparent);
+  padding: 0.55rem 0;
+  font-size: 0.9rem;
+}
+
+.relative-row .name, .lie-card .name {
+  font-family: Inter, sans-serif;
+  font-weight: 500;
+}
+
+.mono-quiet {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  opacity: 0.7;
+}
+
+.coral-flag {
+  color: var(--edna-coral);
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 0.68rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.lie-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
+iframe[title="depth-tree"] {
+  background: transparent;
+}
+
+@media (max-width: 700px) {
+  .lie-grid { grid-template-columns: 1fr; }
+  .block-container { padding-left: 1rem; padding-right: 1rem; }
+}

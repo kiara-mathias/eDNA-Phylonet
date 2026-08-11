@@ -1,9 +1,10 @@
 """Streamlit dashboard: a specimen record, not a BI layout.
 
-The page is a single vertical scroll. Color is taxonomic confidence as
-ocean depth -- species (trustworthy) is shallow seafoam, order (the last
-fallback) is deep navy -- the same cascade ``HierarchicalFallback`` uses.
-Only the depth-tree reveal animates; calibration, BLAST-lie gallery, and
+Identify / Evidence / Method tabs keep the cascade call separate from the
+proof and the benchmark. Color is taxonomic confidence as ocean depth --
+species (trustworthy) is shallow seafoam, order (the last fallback) is
+deep navy -- the same cascade ``HierarchicalFallback`` uses. Only the
+depth-tree reveal animates; calibration, BLAST-lie gallery, and
 false-confident-wrong charts stay quiet underneath.
 """
 
@@ -29,6 +30,11 @@ from app.dashboard_charts import (  # noqa: E402
     reliability_frame,
     reports_to_dicts,
 )
+from app.depth_tree import (  # noqa: E402,F401
+    build_depth_tree_html,
+    rank_visual_state,
+    render_depth_tree,
+)
 from app.gallery_examples import BLAST_LIE_EXAMPLES, BlastLieExample  # noqa: E402
 from app.pipeline import (  # noqa: E402
     Pipeline,
@@ -40,9 +46,13 @@ from app.pipeline import (  # noqa: E402
 )
 from src.common import resolve_path  # noqa: E402
 from src.fallback.novelty import FallbackPrediction, NeighborHit  # noqa: E402
+from theme.inject import inject_theme  # noqa: E402
+from theme.tokens import CORAL, NAVY, RANK_BAND, SAND, SEAFOAM, TEAL  # noqa: E402
 
 _RANKS = ("species", "genus", "family", "order")
-_RANK_INDEX = {rank: i for i, rank in enumerate(_RANKS)}
+_TAB_LABELS = ("Identify", "Evidence", "Method")
+_PRED_STATE = "identify_prediction"
+_SEQ_STATE = "identify_sequence"
 _METHOD_OPTIONS = ("ours", "blast", "naive_bayes", "nearest_neighbor")
 _METHOD_LABELS = {
     "ours": "ours",
@@ -50,225 +60,12 @@ _METHOD_LABELS = {
     "naive_bayes": "Naive Bayes",
     "nearest_neighbor": "1-NN",
 }
-
-_SAND = "#F7F4EC"
-_NAVY = "#0A1F2E"
-_TEAL = "#1B5E6C"
-_SEAFOAM = "#4FA8A0"
-_CORAL = "#E8734A"
-_INK = "#2C2C2C"
-_RANK_BAND = {
-    "species": "#4FA8A0",
-    "genus": "#2A7A82",
-    "family": "#1B5E6C",
-    "order": "#0A1F2E",
-}
-_RANK_INK = {
-    "species": "#0A1F2E",
-    "genus": "#F7F4EC",
-    "family": "#F7F4EC",
-    "order": "#F7F4EC",
-}
 _METHOD_COLOR = {
-    "ours": _SEAFOAM,
-    "blast": _CORAL,
-    "naive_bayes": _TEAL,
-    "nearest_neighbor": _NAVY,
+    "ours": SEAFOAM,
+    "blast": CORAL,
+    "naive_bayes": TEAL,
+    "nearest_neighbor": NAVY,
 }
-_TREE_REVEAL_MS = 250
-
-_CSS = f"""
-@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600&display=swap');
-
-html, body, [data-testid="stAppViewContainer"], .stApp {{
-  background: {_SAND};
-  color: {_INK};
-  font-family: Inter, "Segoe UI", sans-serif;
-}}
-[data-testid="stHeader"], [data-testid="stToolbar"], #MainMenu, footer {{
-  visibility: hidden;
-  height: 0;
-}}
-[data-testid="stSidebar"] {{ display: none; }}
-.block-container {{
-  max-width: 880px;
-  padding-top: 1.25rem;
-  padding-bottom: 4rem;
-}}
-h1, h2, h3, .record-kicker, .panel-kicker {{
-  font-family: "IBM Plex Mono", ui-monospace, monospace;
-  letter-spacing: 0.04em;
-}}
-.record-header {{
-  background: {_NAVY};
-  color: {_SAND};
-  padding: 1.35rem 1.4rem 1.2rem;
-  margin: 0 0 1.5rem 0;
-}}
-.record-kicker {{
-  font-size: 0.68rem;
-  text-transform: uppercase;
-  opacity: 0.7;
-  margin: 0 0 0.35rem 0;
-}}
-.record-header h1 {{
-  font-size: 1.35rem;
-  font-weight: 500;
-  margin: 0 0 0.45rem 0;
-  color: {_SAND};
-}}
-.record-header p {{
-  margin: 0;
-  font-family: Inter, sans-serif;
-  font-size: 0.92rem;
-  line-height: 1.45;
-  color: {_SAND};
-  opacity: 0.88;
-}}
-.record-meta {{
-  margin-top: 0.75rem;
-  font-family: "IBM Plex Mono", ui-monospace, monospace;
-  font-size: 0.72rem;
-  letter-spacing: 0.06em;
-  opacity: 0.65;
-}}
-textarea {{
-  font-family: "IBM Plex Mono", ui-monospace, monospace !important;
-  letter-spacing: 0.12em !important;
-  font-size: 0.82rem !important;
-  background: {_SAND} !important;
-  color: {_INK} !important;
-}}
-div[data-testid="stTextArea"] label, div[data-testid="stTextInput"] label {{
-  font-family: "IBM Plex Mono", ui-monospace, monospace;
-  font-size: 0.72rem !important;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}}
-.stButton > button {{
-  background: {_SEAFOAM};
-  color: {_NAVY};
-  border: 0;
-  font-family: "IBM Plex Mono", ui-monospace, monospace;
-  letter-spacing: 0.06em;
-  font-weight: 500;
-}}
-.stButton > button:hover {{
-  background: {_TEAL};
-  color: {_SAND};
-}}
-.specimen-seq {{
-  font-family: "IBM Plex Mono", ui-monospace, monospace;
-  letter-spacing: 0.16em;
-  font-size: 0.78rem;
-  line-height: 1.7;
-  color: {_NAVY};
-  border: 1px solid {_NAVY}22;
-  padding: 0.7rem 0.85rem;
-  margin: 0.4rem 0 1.2rem 0;
-  word-break: break-all;
-}}
-.panel-kicker {{
-  font-size: 0.68rem;
-  text-transform: uppercase;
-  color: {_NAVY};
-  margin: 1.4rem 0 0.35rem 0;
-}}
-.panel-lede {{
-  font-size: 0.84rem;
-  color: {_INK};
-  opacity: 0.78;
-  margin: 0 0 0.85rem 0;
-}}
-.depth-ranks {{
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}}
-.depth-rank {{
-  display: grid;
-  grid-template-columns: 6.5rem 1fr auto;
-  gap: 0.75rem;
-  align-items: baseline;
-  padding: 0.85rem 1rem;
-  animation: depth-reveal {_TREE_REVEAL_MS}ms ease-out both;
-  animation-delay: var(--delay);
-}}
-.depth-rank .rank-name {{
-  font-family: "IBM Plex Mono", ui-monospace, monospace;
-  font-size: 0.68rem;
-  text-transform: uppercase;
-  letter-spacing: 0.12em;
-  opacity: 0.8;
-}}
-.depth-rank .taxon {{
-  font-family: Inter, sans-serif;
-  font-size: 1.02rem;
-  font-weight: 500;
-}}
-.depth-rank .conf {{
-  font-family: "IBM Plex Mono", ui-monospace, monospace;
-  font-size: 0.78rem;
-  letter-spacing: 0.04em;
-}}
-.depth-rank.is-skipped, .depth-rank.is-abyss {{
-  animation-name: depth-reveal-dim;
-}}
-.depth-rank.is-committed {{
-  border-left: 3px solid {_SAND};
-}}
-.abyss-note {{
-  background: {_NAVY};
-  color: {_SAND};
-  font-family: "IBM Plex Mono", ui-monospace, monospace;
-  font-size: 0.68rem;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  padding: 0.65rem 1rem;
-  opacity: 0.85;
-  animation: depth-reveal {_TREE_REVEAL_MS}ms ease-out both;
-  animation-delay: calc(4 * {_TREE_REVEAL_MS}ms);
-}}
-@keyframes depth-reveal {{
-  from {{ opacity: 0; transform: translateY(-6px); }}
-  to {{ opacity: 1; transform: none; }}
-}}
-@keyframes depth-reveal-dim {{
-  from {{ opacity: 0; transform: translateY(-6px); }}
-  to {{ opacity: 0.28; transform: none; }}
-}}
-.relative-row, .lie-card {{
-  border-top: 1px solid {_NAVY}18;
-  padding: 0.55rem 0;
-  font-size: 0.9rem;
-}}
-.relative-row .name, .lie-card .name {{
-  font-family: Inter, sans-serif;
-  font-weight: 500;
-}}
-.mono-quiet {{
-  font-family: "IBM Plex Mono", ui-monospace, monospace;
-  font-size: 0.72rem;
-  letter-spacing: 0.04em;
-  opacity: 0.7;
-}}
-.coral-flag {{
-  color: {_CORAL};
-  font-family: "IBM Plex Mono", ui-monospace, monospace;
-  font-size: 0.68rem;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-}}
-.lie-grid {{
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 1rem;
-}}
-@media (max-width: 700px) {{
-  .lie-grid {{ grid-template-columns: 1fr; }}
-  .depth-rank {{ grid-template-columns: 1fr; gap: 0.2rem; }}
-}}
-"""
 
 
 @st.cache_resource(show_spinner="Fitting encoder + classifier + fallback on the known reference data...")
@@ -278,67 +75,6 @@ def _cached_pipeline(config_path: str) -> Pipeline | None:
         return load_pipeline(config)
     except FileNotFoundError:
         return None
-
-
-def _inject_theme() -> None:
-    st.markdown(f"<style>{_CSS}</style>", unsafe_allow_html=True)
-
-
-def rank_visual_state(prediction: FallbackPrediction, rank: str) -> str:
-    """``skipped`` (shallower than the commit), ``committed``, or ``abyss`` (deeper)."""
-    predicted = prediction.predicted_rank
-    if predicted is None:
-        return "abyss"
-    if _RANK_INDEX[rank] < _RANK_INDEX[predicted]:
-        return "skipped"
-    if rank == predicted:
-        return "committed"
-    return "abyss"
-
-
-def _taxon_at_rank(prediction: FallbackPrediction, rank: str) -> str:
-    committed = getattr(prediction, rank)
-    if committed:
-        return str(committed)
-    nearest = prediction.nearest.get(rank)
-    return str(nearest) if nearest else "—"
-
-
-def build_depth_tree_html(prediction: FallbackPrediction) -> str:
-    """Vertical water column: species at the surface, order at the bottom."""
-    rows: list[str] = []
-    for i, rank in enumerate(_RANKS):
-        state = rank_visual_state(prediction, rank)
-        confidence = prediction.confidence.get(rank, 0.0)
-        taxon = html.escape(_taxon_at_rank(prediction, rank))
-        bg = _RANK_BAND[rank]
-        fg = _RANK_INK[rank]
-        delay = f"{i * _TREE_REVEAL_MS}ms"
-        rows.append(
-            f'<li class="depth-rank is-{html.escape(state)}" '
-            f'style="background:{bg};color:{fg};--delay:{delay}">'
-            f'<span class="rank-name">{html.escape(rank)}</span>'
-            f'<span class="taxon">{taxon}</span>'
-            f'<span class="conf">{confidence * 100:.0f}%</span>'
-            f"</li>"
-        )
-
-    stop = prediction.predicted_rank or "unresolved"
-    abyss = (
-        "unresolved water — no trustworthy rank"
-        if prediction.predicted_rank is None
-        else f"below {stop} · not trustworthy"
-    )
-    return (
-        '<section class="depth-well">'
-        '<p class="panel-kicker">Taxonomic depth</p>'
-        '<p class="panel-lede">Shallow water is a species-level call. '
-        "Each band darker is one rank of fallback. The cascade stops at the "
-        "last trustworthy rank; below that is unresolved water.</p>"
-        f'<ol class="depth-ranks">{"".join(rows)}</ol>'
-        f'<div class="abyss-note">{html.escape(abyss)}</div>'
-        "</section>"
-    )
 
 
 def format_specimen_sequence(sequence: str, width: int = 60) -> str:
@@ -385,9 +121,9 @@ def reliability_reports(summary: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def draw_reliability_chart(frame: pd.DataFrame):
-    fig, ax = plt.subplots(figsize=(5.2, 4.4), facecolor=_SAND)
-    ax.set_facecolor(_SAND)
-    ax.plot([0, 1], [0, 1], linestyle="--", color=_NAVY, linewidth=1.0, alpha=0.35, label="perfect")
+    fig, ax = plt.subplots(figsize=(5.2, 4.4), facecolor=SAND)
+    ax.set_facecolor(SAND)
+    ax.plot([0, 1], [0, 1], linestyle="--", color=NAVY, linewidth=1.0, alpha=0.35, label="perfect")
     for rank, group in frame.groupby("rank", sort=False):
         ece = group["ece"].iloc[0] if "ece" in group.columns else float("nan")
         label = f"{rank}" + (f"  ECE {ece:.3f}" if np.isfinite(ece) else "")
@@ -396,7 +132,7 @@ def draw_reliability_chart(frame: pd.DataFrame):
             group["accuracy"],
             marker="o",
             linewidth=1.8,
-            color=_RANK_BAND.get(str(rank), _TEAL),
+            color=RANK_BAND.get(str(rank), TEAL),
             label=label,
         )
     ax.set_xlim(0.0, 1.0)
@@ -406,21 +142,21 @@ def draw_reliability_chart(frame: pd.DataFrame):
     ax.set_title("Reliability by taxonomic rank")
     ax.legend(loc="lower right", frameon=False, fontsize=8)
     for spine in ax.spines.values():
-        spine.set_color(_NAVY)
+        spine.set_color(NAVY)
         spine.set_alpha(0.25)
     fig.tight_layout()
     return fig
 
 
 def draw_fcw_chart(curve_df: pd.DataFrame):
-    fig, ax = plt.subplots(figsize=(7.2, 3.8), facecolor=_SAND)
-    ax.set_facecolor(_SAND)
+    fig, ax = plt.subplots(figsize=(7.2, 3.8), facecolor=SAND)
+    ax.set_facecolor(SAND)
     for method, group in curve_df.groupby("method", sort=False):
         ax.plot(
             group["threshold"],
             group["fcw"],
             linewidth=2.0,
-            color=_METHOD_COLOR.get(str(method), _TEAL),
+            color=_METHOD_COLOR.get(str(method), TEAL),
             label=group["label"].iloc[0],
         )
     ax.set_xlabel("Confidence threshold")
@@ -430,7 +166,7 @@ def draw_fcw_chart(curve_df: pd.DataFrame):
     ax.set_ylim(bottom=0.0)
     ax.legend(loc="upper right", frameon=False, fontsize=8)
     for spine in ax.spines.values():
-        spine.set_color(_NAVY)
+        spine.set_color(NAVY)
         spine.set_alpha(0.25)
     fig.tight_layout()
     return fig
@@ -479,22 +215,27 @@ def _render_classify(pipeline: Pipeline) -> FallbackPrediction | None:
     lat_text = col1.text_input("Latitude (optional)", value="")
     lon_text = col2.text_input("Longitude (optional)", value="")
 
-    if not st.button("Identify this specimen", type="primary"):
+    # Tabs rerun the script; keep the last call so switching away from
+    # Identify does not wipe the tree.
+    if st.button("Identify this specimen", type="primary"):
+        try:
+            sequence = clean_sequence_text(raw_text)
+        except SequenceParseError as exc:
+            st.error(str(exc))
+        else:
+            lat = float(lat_text) if lat_text.strip() else None
+            lon = float(lon_text) if lon_text.strip() else None
+            if (lat is None) != (lon is None):
+                st.error("Provide both latitude and longitude, or leave both blank.")
+            else:
+                st.session_state[_SEQ_STATE] = sequence
+                st.session_state[_PRED_STATE] = classify_sequence(pipeline, sequence, lat, lon)
+
+    prediction = st.session_state.get(_PRED_STATE)
+    sequence = st.session_state.get(_SEQ_STATE)
+    if prediction is None or sequence is None:
         return None
 
-    try:
-        sequence = clean_sequence_text(raw_text)
-    except SequenceParseError as exc:
-        st.error(str(exc))
-        return None
-
-    lat = float(lat_text) if lat_text.strip() else None
-    lon = float(lon_text) if lon_text.strip() else None
-    if (lat is None) != (lon is None):
-        st.error("Provide both latitude and longitude, or leave both blank.")
-        return None
-
-    prediction = classify_sequence(pipeline, sequence, lat, lon)
     st.markdown(
         f'<div class="specimen-seq">{html.escape(format_specimen_sequence(sequence))}</div>',
         unsafe_allow_html=True,
@@ -505,7 +246,7 @@ def _render_classify(pipeline: Pipeline) -> FallbackPrediction | None:
         )
     else:
         st.success(f"Resolved at species: {prediction.species}")
-    st.markdown(build_depth_tree_html(prediction), unsafe_allow_html=True)
+    render_depth_tree(prediction)
     return prediction
 
 
@@ -659,36 +400,33 @@ def _render_benchmark_table(results: list[dict[str, Any]] | None) -> None:
 
 def main() -> None:
     st.set_page_config(page_title="eDNA specimen record", layout="centered")
-    _inject_theme()
+    inject_theme()
 
     config = load_app_config()
     pipeline = _cached_pipeline("configs/app.yaml")
     _render_header(pipeline)
 
-    prediction: FallbackPrediction | None = None
-    if pipeline is None:
-        st.warning(
-            "No reference data found at "
-            f"`{config['data']['sequences_path']}`. Run "
-            "`python -m src.ingest.fetch_bold` and `python -m src.preprocess.clean` first."
-        )
-    else:
-        prediction = _render_classify(pipeline)
-
-    show_relatives = prediction is not None and prediction.is_novel
-    if show_relatives:
-        cal_col, rel_col = st.columns(2)
-        with cal_col:
-            _render_calibration(config)
-        with rel_col:
-            assert prediction is not None
+    identify_tab, evidence_tab, method_tab = st.tabs(list(_TAB_LABELS))
+    with identify_tab:
+        prediction: FallbackPrediction | None = None
+        if pipeline is None:
+            st.warning(
+                "No reference data found at "
+                f"`{config['data']['sequences_path']}`. Run "
+                "`python -m src.ingest.fetch_bold` and `python -m src.preprocess.clean` first."
+            )
+        else:
+            prediction = _render_classify(pipeline)
+        if prediction is not None:
             _render_relatives(prediction)
-    else:
+    with evidence_tab:
         _render_calibration(config)
-
-    _render_blast_gallery()
-    _render_fcw(config)
-    _render_benchmark_table(load_json_if_exists(config.get("benchmark_results_path", "data/eval_results/benchmark.json")))
+        _render_blast_gallery()
+    with method_tab:
+        _render_fcw(config)
+        _render_benchmark_table(
+            load_json_if_exists(config.get("benchmark_results_path", "data/eval_results/benchmark.json"))
+        )
 
 
 if __name__ == "__main__":
