@@ -273,6 +273,31 @@ textarea {
   margin: 0.15rem 0 0.1rem;
 }
 
+.fcw-callout {
+  margin: 0.35rem 0 1rem;
+  padding: 0.35rem 0 0.2rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--edna-navy) 12%, transparent);
+}
+
+.fcw-value {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 2.35rem;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  color: var(--edna-navy);
+  line-height: 1.1;
+}
+
+.fcw-label {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 0.68rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--edna-navy);
+  opacity: 0.65;
+  margin: 0.35rem 0 0.7rem;
+}
+
 .coral-flag {
   color: var(--edna-coral);
   font-family: "IBM Plex Mono", ui-monospace, monospace;

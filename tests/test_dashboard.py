@@ -213,7 +213,9 @@ def test_dashboard_renders_benchmark_table_when_results_exist(isolated_project):
     at.run(timeout=60)
 
     assert not at.exception
-    assert len(at.dataframe) >= 1
+    assert len(at.select_slider) >= 1
+    blob = " ".join(str(m.value) for m in at.markdown)
+    assert "clade exclusion" in blob.lower() or "genus holdout" in blob.lower()
 
 
 def test_dashboard_omits_benchmark_when_no_results(isolated_project):
@@ -267,6 +269,8 @@ def test_dashboard_fcw_renders_when_results_exist(isolated_project):
     assert not at.exception
     assert len(at.slider) >= 1
     assert len(at.multiselect) >= 1
+    blob = " ".join(str(m.value) for m in at.markdown)
+    assert "false-confident-wrong" in blob.lower()
 
 
 def test_nearest_relatives_dataframe_lists_species_then_genera_in_given_order():

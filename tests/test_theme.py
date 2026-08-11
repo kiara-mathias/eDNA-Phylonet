@@ -17,3 +17,4 @@ def test_load_css_overrides_core_streamlit_widgets():
     assert "Inter" in css
     assert ".family-icon" in css
     assert ".result-callout" in css
+    assert ".fcw-callout" in css
