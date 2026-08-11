@@ -6,8 +6,9 @@
   calibration) and cleans pasted sequence/FASTA text.
 - ``dashboard.py``: the Streamlit app itself -- a Classify tab for
   interactive inference (predicted taxonomy, per-rank confidence, novelty
-  flag with closest relative) and a Benchmark Results tab rendering the
-  Step 6 comparison against the BLAST/Naive Bayes/1-NN baselines.
+  flag with top-k nearest known relatives) and a Benchmark Results tab
+  rendering the Step 6 comparison against the BLAST/Naive Bayes/1-NN
+  baselines.
 
 There's no separately-trained model to pull from external storage (unlike
 a typical deep learning deployment) -- the k-mer+PCA encoder and

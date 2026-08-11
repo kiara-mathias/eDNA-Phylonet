@@ -29,6 +29,10 @@ fallback:
   # Must match configs/eval.yaml so dashboard confidence matches the
   # benchmarked HierarchicalFallback (see sample_count_prior there).
   sample_count_prior: 5.0
+  # How many nearest known species *and* genera to attach to every
+  # prediction (surfaced on novel flags so "closest relative" is a
+  # ranked, inspectable list rather than a single name). Typical 3-5.
+  n_nearest_relatives: 5
 
 # Written by src/eval/benchmark.py; the dashboard's Benchmark tab reads
 # this to render the Step 6 comparison results (shows a "run benchmark

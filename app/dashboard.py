@@ -3,8 +3,8 @@
 Two tabs:
 - **Classify**: paste/upload a DNA sequence (raw or FASTA), optionally give
   a lat/lon, and see the hierarchical, novelty-aware prediction --
-  resolved rank, per-rank confidence, and (when flagged novel) the closest
-  known relative.
+  resolved rank, per-rank confidence, and (when flagged novel) the top-k
+  nearest known species and genera by distance.
 - **Benchmark Results**: renders the Step 6 comparison (``data/eval_results/
   benchmark.json``) -- our system vs. the Naive Bayes / 1-NN / BLAST
   baselines, per-rank coverage and accuracy-among-answered.
@@ -35,7 +35,7 @@ from app.pipeline import (  # noqa: E402
     load_pipeline,
 )
 from src.common import resolve_path  # noqa: E402
-from src.fallback.novelty import FallbackPrediction  # noqa: E402
+from src.fallback.novelty import FallbackPrediction, NeighborHit  # noqa: E402
 
 _RANKS = ("species", "genus", "family", "order")
 _TREE_RANKS = ("order", "family", "genus", "species")  # coarse -> fine, for drawing top-down
@@ -86,9 +86,9 @@ def _build_taxonomy_tree_dot(prediction: FallbackPrediction) -> str:
 
     Each resolved node's fill color is that rank's calibrated confidence
     (green/amber/red); a dashed leaf marks exactly where the cascade
-    dropped below threshold, labeled with the closest known relative --
-    the same "novel taxon, closest relative: X" the model itself reports,
-    just drawn instead of only stated.
+    dropped below threshold, labeled with the nearest known species --
+    the same top hit the model reports, with the full top-k list shown
+    beside the tree so the claim is inspectable.
     """
     lines = [
         "digraph taxonomy {",
@@ -112,7 +112,9 @@ def _build_taxonomy_tree_dot(prediction: FallbackPrediction) -> str:
         previous_node_id = node_id
 
     if prediction.is_novel:
-        novel_label = _escape_dot_label(f"novel taxon\nclosest relative:\n{prediction.closest_relative_species}")
+        novel_label = _escape_dot_label(
+            f"novel taxon\nnearest species:\n{prediction.closest_relative_species}"
+        )
         lines.append(
             f'n_novel [label="{novel_label}", style="rounded,dashed,filled", '
             f'fillcolor="{_NOVEL_FILL_COLOR}", fontcolor="{_NOVEL_FONT_COLOR}", color="{_NOVEL_BORDER_COLOR}"];'
@@ -122,6 +124,32 @@ def _build_taxonomy_tree_dot(prediction: FallbackPrediction) -> str:
 
     lines.append("}")
     return "\n".join(lines)
+
+
+def _hits_to_rows(hits: list[NeighborHit]) -> list[dict[str, object]]:
+    rows = []
+    for i, hit in enumerate(hits, start=1):
+        rows.append(
+            {
+                "Rank": i,
+                "Taxon rank": hit.rank.capitalize(),
+                "Label": hit.label,
+                "Genus": hit.genus,
+                "Family": hit.family,
+                "Distance": hit.distance,
+                "Support (n)": hit.support,
+            }
+        )
+    return rows
+
+
+def nearest_relatives_dataframe(prediction: FallbackPrediction) -> pd.DataFrame:
+    """Species then genera, each already ordered by distance at that rank.
+
+    Distances are not comparable across ranks (different centroid scales),
+    so this is two concatenated lists, not a single mixed ranking.
+    """
+    return pd.DataFrame(_hits_to_rows(prediction.nearest_species) + _hits_to_rows(prediction.nearest_genera))
 
 
 def _render_classify_tab(pipeline: Pipeline) -> None:
@@ -162,9 +190,12 @@ def _render_classify_tab(pipeline: Pipeline) -> None:
     st.divider()
 
     if prediction.is_novel:
+        top_species = ", ".join(hit.label for hit in prediction.nearest_species[:3]) or prediction.closest_relative_species
         st.warning(
             f"**Novel taxon** (no confident call at species or genus level). "
-            f"Closest known relative: *{prediction.closest_relative_species}*."
+            f"Nearest known species: *{prediction.closest_relative_species}* "
+            f"(top hits: {top_species}). Inspect the ranked neighbors below — "
+            f"this is not a single black-box name."
         )
     else:
         st.success(f"**{prediction.species}** (resolved at species level)")
@@ -203,6 +234,26 @@ def _render_classify_tab(pipeline: Pipeline) -> None:
                 "Distance": st.column_config.NumberColumn("Distance (scaled)", format="%.3f"),
                 "Support (n)": st.column_config.NumberColumn(
                     "Support (n)", help="Training rows backing the nearest label at this rank."
+                ),
+            },
+            hide_index=True,
+            width="stretch",
+        )
+
+    if prediction.is_novel:
+        st.subheader("Nearest known relatives")
+        st.caption(
+            "Top known species and genera by the same combined distance the "
+            "fallback uses. Species and genera are listed separately: distances "
+            "are scaled per rank and are not comparable across ranks."
+        )
+        relatives_df = nearest_relatives_dataframe(prediction)
+        st.dataframe(
+            relatives_df,
+            column_config={
+                "Distance": st.column_config.NumberColumn("Distance (scaled)", format="%.3f"),
+                "Support (n)": st.column_config.NumberColumn(
+                    "Support (n)", help="Training rows backing this centroid."
                 ),
             },
             hide_index=True,

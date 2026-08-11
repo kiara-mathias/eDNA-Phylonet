@@ -16,6 +16,9 @@ import pytest
 import streamlit as st
 from streamlit.testing.v1 import AppTest
 
+from app.dashboard import nearest_relatives_dataframe
+from src.fallback.novelty import FallbackPrediction, NeighborHit
+
 _DASHBOARD_PATH = str(Path(__file__).resolve().parents[1] / "app" / "dashboard.py")
 
 
@@ -150,6 +153,34 @@ def test_dashboard_renders_benchmark_tab_when_results_exist(isolated_project):
 
     assert not at.exception
     assert len(at.tabs[1].dataframe) >= 1
+
+
+def test_nearest_relatives_dataframe_lists_species_then_genera_in_given_order():
+    prediction = FallbackPrediction(
+        predicted_rank=None,
+        is_novel=True,
+        closest_relative_species="A a",
+        species=None,
+        genus=None,
+        family=None,
+        order=None,
+        confidence={rank: 0.0 for rank in ("species", "genus", "family", "order")},
+        distance={rank: 1.0 for rank in ("species", "genus", "family", "order")},
+        support={rank: 1 for rank in ("species", "genus", "family", "order")},
+        nearest_species=[
+            NeighborHit(label="A a", rank="species", distance=0.1, support=3, genus="A", family="FA", order="OA"),
+            NeighborHit(label="B b", rank="species", distance=0.4, support=2, genus="B", family="FB", order="OB"),
+        ],
+        nearest_genera=[
+            NeighborHit(label="A", rank="genus", distance=0.2, support=5, genus="A", family="FA", order="OA"),
+        ],
+    )
+
+    table = nearest_relatives_dataframe(prediction)
+
+    assert list(table["Label"]) == ["A a", "B b", "A"]
+    assert list(table["Taxon rank"]) == ["Species", "Species", "Genus"]
+    assert list(table["Rank"]) == [1, 2, 1]
 
 
 def test_dashboard_shows_missing_benchmark_message_when_no_results(isolated_project):

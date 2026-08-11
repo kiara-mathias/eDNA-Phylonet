@@ -4,8 +4,9 @@ Zero-shot eDNA species annotation with an honest fallback: instead of
 failing outright when a read doesn't match any known reference sequence
 (the failure mode of exact-match tools like BLAST/QIIME2), this system
 always returns a usable, ranked answer -- either a confident species call,
-or a "novel taxon, closest relative: X" flag with a hierarchical confidence
-score at each taxonomic rank (species -> genus -> family -> order).
+or a "novel taxon" flag with the top-k nearest known species/genera and a
+hierarchical confidence score at each taxonomic rank (species -> genus ->
+family -> order).
 
 **Current status: all 8 steps of the build plan are implemented and
 validated end-to-end** -- ingestion, cleaning, clade-exclusion splitting,
@@ -22,7 +23,8 @@ see [Roadmap](#roadmap).
 - **Novel component** (adapted from Paper 3: Algorithms/MDPI, Feb 2025):
   a hierarchical fallback + novelty-flagging layer sitting after
   classification, deciding per-sample whether to output a confident label
-  or a flagged "closest relative" with per-rank confidence.
+  or a flagged novel taxon with the top-k nearest known relatives and
+  per-rank confidence.
 - **Robustness insight** (Paper 1: IEEE Access 2024,
   [DOI 10.1109/ACCESS.2024.3450016](https://doi.org/10.1109/ACCESS.2024.3450016)):
   informs handling of messy/incomplete input data throughout.
@@ -47,8 +49,9 @@ The hierarchical fallback (`src/fallback/novelty.py`) sits after that base
 classifier: it cascades species -> genus -> family -> order, committing to
 the deepest rank whose nearest-centroid distance is within a threshold
 calibrated (per rank) from the validation split, and otherwise flags the
-query as novel -- while always reporting the single nearest known species
-as a "closest relative" hint, with a confidence score at every rank.
+query as novel -- while always reporting the top-k nearest known species
+and genera (by distance) so the "closest relative" claim is inspectable,
+with a confidence score at every rank.
 
 ## Repo layout
 
@@ -63,9 +66,7 @@ edna-classifier/
     model/             # Paper2Classifier: taxonomy+geo nearest-centroid (implemented)
     fallback/          # HierarchicalFallback: cascading novelty flagging (implemented)
     eval/              # clade-exclusion splitter, baseline/fallback validation,
-                       # confidence calibration (ECE/reliability), BLAST/Naive-
-                       # Bayes/1-NN benchmark, and head-to-head accuracy/FCW
-                       # table+plot (all implemented)
+                       # and the BLAST/Naive-Bayes/1-NN benchmark (all implemented)
     baselines/         # NaiveBayesBaseline, NearestNeighborBaseline, BlastBaseline
   app/                 # Streamlit dashboard: pipeline.py + dashboard.py (implemented)
   configs/             # YAML config per experiment
@@ -141,15 +142,6 @@ seen species), ~90% still get a confident species call, consistent with
 the 90th-percentile calibration, with ~88-90% of those species calls
 actually correct.
 
-```bash
-# 5b. Prove reported confidence is calibrated on the same held-out genera.
-#     Dumps confidence+correctness per query/rank, writes a reliability
-#     diagram, reports ECE per rank, and (if ECE > 0.1) fits isotonic /
-#     Platt recalibrators leave-one-holdout-out then re-scores. Writes
-#     data/eval_results/calibration/.
-python -m src.eval.validate_calibration --config configs/eval.yaml
-```
-
 ## Benchmarking
 
 ```bash
@@ -176,17 +168,6 @@ in [`configs/eval.yaml`](configs/eval.yaml)). The BLAST row requires
 `blastn`/`makeblastdb` on `PATH` (installed in Docker/CI; not required for
 local development, skipped with a logged warning if absent -- see
 `src/baselines/blast_baseline.py`).
-
-```bash
-# 6b. Standardized head-to-head on the same held-out splits: BLAST, Naive
-#     Bayes, 1-NN, and our system. Per method per rank: accuracy (abstention
-#     counts as wrong) and false-confident-wrong-call rate, also restricted
-#     to the novel/held-out-genera subset. Writes one table (method × rank
-#     × metric) and one plot (FCW rate vs. confidence threshold, one line
-#     per method). BLAST uses bitscore (e-value fallback) as its score.
-#     Writes data/eval_results/head_to_head/.
-python -m src.eval.head_to_head --config configs/eval.yaml
-```
 
 Reported confidence in the fallback (and dashboard) is distance-based
 confidence multiplied by sample-count reliability
