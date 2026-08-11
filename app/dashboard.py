@@ -35,6 +35,7 @@ from app.depth_tree import (  # noqa: E402,F401
     rank_visual_state,
     render_depth_tree,
 )
+from app.family_icons import result_callout_html  # noqa: E402
 from app.species_image import render_reference_photo  # noqa: E402
 from app.gallery_examples import BLAST_LIE_EXAMPLES, BlastLieExample  # noqa: E402
 from app.pipeline import (  # noqa: E402
@@ -241,12 +242,7 @@ def _render_classify(pipeline: Pipeline) -> FallbackPrediction | None:
         f'<div class="specimen-seq">{html.escape(format_specimen_sequence(sequence))}</div>',
         unsafe_allow_html=True,
     )
-    if prediction.is_novel:
-        st.warning(
-            f"Novel taxon — closest known relative: {prediction.closest_relative_species}."
-        )
-    else:
-        st.success(f"Resolved at species: {prediction.species}")
+    st.markdown(result_callout_html(prediction), unsafe_allow_html=True)
     st.markdown(
         '<p class="panel-kicker">Taxonomic depth</p>'
         '<p class="panel-lede">Shallow water is a species-level call. '

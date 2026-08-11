@@ -162,12 +162,15 @@ def test_dashboard_classifies_a_known_sequence(isolated_project):
     at.button[0].click().run(timeout=60)
 
     assert not at.exception
-    assert len(at.success) + len(at.warning) >= 1
+    blob = " ".join(str(m.value) for m in at.markdown)
+    assert "Resolved at species" in blob or "Novel taxon" in blob
+    assert "family-icon" in blob
 
     # Tabs rerun the script; the call must survive a second pass.
     at.run(timeout=60)
     assert not at.exception
-    assert len(at.success) + len(at.warning) >= 1
+    blob = " ".join(str(m.value) for m in at.markdown)
+    assert "Resolved at species" in blob or "Novel taxon" in blob
 
 
 def test_dashboard_rejects_invalid_sequence_text(isolated_project):
