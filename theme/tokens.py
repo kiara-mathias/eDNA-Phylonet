@@ -31,9 +31,15 @@ FONT_SANS = 'Inter, "Segoe UI", sans-serif'
 FONT_MONO = '"IBM Plex Mono", ui-monospace, monospace'
 FONT_HREF = (
     "https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600"
-    "&family=Inter:wght@400;500;600&display=swap"
+    "&family=Inter:wght@400;500;600;700&display=swap"
 )
 
 TREE_REVEAL_MS = 200
-TREE_IFRAME_HEIGHT = 620
+TREE_IFRAME_HEIGHT = 680
+RANK_LIT = {
+    "species": "#7FCFC8",
+    "genus": "#3D8F96",
+    "family": "#2A7484",
+    "order": "#163A4E",
+}
 RANKS = ("species", "genus", "family", "order")

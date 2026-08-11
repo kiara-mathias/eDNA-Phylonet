@@ -29,12 +29,14 @@ footer {
 [data-testid="stSidebar"] { display: none; }
 
 .block-container {
-  max-width: 880px;
+  max-width: 1280px;
   padding-top: 1.25rem;
   padding-bottom: 4rem;
+  padding-left: 2rem;
+  padding-right: 2rem;
 }
 
-h1, h2, h3, .record-kicker, .panel-kicker {
+h1, h2, h3, .record-kicker, .record-title, .panel-kicker {
   font-family: "IBM Plex Mono", ui-monospace, monospace;
   letter-spacing: 0.04em;
 }
@@ -188,45 +190,83 @@ textarea {
 }
 
 .record-kicker {
-  font-size: 0.68rem;
+  font-family: "IBM Plex Mono", ui-monospace, monospace !important;
+  font-size: 0.62rem !important;
   text-transform: uppercase;
+  letter-spacing: 0.2em;
+  opacity: 0.42;
+  margin: 0 0 0.75rem 0 !important;
+}
+
+.record-title {
+  font-family: "IBM Plex Mono", ui-monospace, monospace !important;
+  font-size: 2.2rem !important;
+  font-weight: 500 !important;
+  line-height: 1.12;
+  letter-spacing: 0.01em;
+  margin: 0 0 0.9rem 0 !important;
+  color: var(--edna-sand) !important;
+}
+
+.record-lede {
+  margin: 0 !important;
+  font-family: Inter, "Segoe UI", sans-serif !important;
+  font-size: 0.86rem !important;
+  font-weight: 400 !important;
+  line-height: 1.55;
+  max-width: 38em;
+  color: var(--edna-sand) !important;
+  opacity: 0.55;
+}
+
+.identify-stage {
+  min-height: 28rem;
+  border-radius: 10px;
+  padding: 1.15rem 1.2rem;
+  background:
+    linear-gradient(180deg,
+      color-mix(in srgb, var(--edna-seafoam) 22%, transparent) 0%,
+      color-mix(in srgb, var(--edna-navy) 55%, transparent) 100%),
+    var(--edna-navy);
+  color: var(--edna-sand);
+}
+
+.identify-stage .panel-kicker {
+  color: var(--edna-sand);
+  opacity: 0.55;
+  margin-top: 0;
+}
+
+.stage-hint {
+  font-family: Inter, "Segoe UI", sans-serif;
+  font-size: 0.9rem;
+  line-height: 1.55;
+  max-width: 22em;
   opacity: 0.7;
-  margin: 0 0 0.35rem 0;
-}
-
-.record-header h1 {
-  font-size: 1.35rem;
-  font-weight: 500;
-  margin: 0 0 0.45rem 0;
-  color: var(--edna-sand);
-}
-
-.record-header p {
-  margin: 0;
-  font-family: Inter, sans-serif;
-  font-size: 0.92rem;
-  line-height: 1.45;
-  color: var(--edna-sand);
-  opacity: 0.88;
+  margin: 0.35rem 0 0;
 }
 
 .record-meta {
-  margin-top: 0.75rem;
+  margin-top: 1.2rem;
+  padding-top: 0.8rem;
+  border-top: 1px solid color-mix(in srgb, var(--edna-sand) 14%, transparent);
   font-family: "IBM Plex Mono", ui-monospace, monospace;
-  font-size: 0.72rem;
-  letter-spacing: 0.06em;
-  opacity: 0.65;
+  font-size: 0.62rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  opacity: 0.38;
 }
 
 .specimen-seq {
   font-family: "IBM Plex Mono", ui-monospace, monospace;
-  letter-spacing: 0.16em;
-  font-size: 0.78rem;
-  line-height: 1.7;
+  letter-spacing: 0.14em;
+  font-size: 0.68rem;
+  line-height: 1.55;
   color: var(--edna-navy);
-  border: 1px solid color-mix(in srgb, var(--edna-navy) 13%, transparent);
-  padding: 0.7rem 0.85rem;
-  margin: 0.4rem 0 1.2rem 0;
+  opacity: 0.45;
+  border: 0;
+  padding: 0.15rem 0 0.85rem;
+  margin: 0.15rem 0 0.6rem 0;
   word-break: break-all;
 }
 
@@ -300,11 +340,11 @@ textarea {
 .result-callout {
   display: flex;
   align-items: center;
-  gap: 0.9rem;
-  padding: 0.7rem 0.95rem;
-  margin: 0.35rem 0 1.1rem;
-  border-radius: 8px;
-  border: 1px solid color-mix(in srgb, var(--edna-navy) 14%, transparent);
+  gap: 1.1rem;
+  padding: 1rem 1.15rem;
+  margin: 0.2rem 0 1.15rem;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--edna-navy) 12%, transparent);
   background: color-mix(in srgb, var(--edna-sand) 92%, var(--edna-navy));
 }
 
@@ -323,17 +363,20 @@ textarea {
 
 .result-kicker {
   font-family: "IBM Plex Mono", ui-monospace, monospace;
-  font-size: 0.68rem;
-  letter-spacing: 0.1em;
+  font-size: 0.62rem;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
+  opacity: 0.9;
 }
 
 .result-detail {
   font-family: Inter, "Segoe UI", sans-serif;
-  font-size: 1.05rem;
-  font-weight: 500;
+  font-size: 1.7rem;
+  font-weight: 600;
+  font-style: italic;
+  line-height: 1.15;
   color: var(--edna-navy);
-  margin: 0.15rem 0 0.1rem;
+  margin: 0.2rem 0 0;
 }
 
 .fcw-callout {
