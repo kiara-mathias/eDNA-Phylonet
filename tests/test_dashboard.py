@@ -121,8 +121,13 @@ def _prediction(**overrides) -> FallbackPrediction:
 @pytest.fixture
 def isolated_project(tmp_path, monkeypatch):
     st.cache_resource.clear()
+    st.cache_data.clear()
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("PROJECT_ROOT", str(tmp_path))
+    monkeypatch.setattr(
+        "app.species_image.lookup_species_image",
+        lambda scientific_name, http_get=None: None,
+    )
     _write_app_config(tmp_path)
     return tmp_path
 

@@ -35,6 +35,7 @@ from app.depth_tree import (  # noqa: E402,F401
     rank_visual_state,
     render_depth_tree,
 )
+from app.species_image import render_reference_photo  # noqa: E402
 from app.gallery_examples import BLAST_LIE_EXAMPLES, BlastLieExample  # noqa: E402
 from app.pipeline import (  # noqa: E402
     Pipeline,
@@ -246,7 +247,18 @@ def _render_classify(pipeline: Pipeline) -> FallbackPrediction | None:
         )
     else:
         st.success(f"Resolved at species: {prediction.species}")
-    render_depth_tree(prediction)
+    st.markdown(
+        '<p class="panel-kicker">Taxonomic depth</p>'
+        '<p class="panel-lede">Shallow water is a species-level call. '
+        "Each node darker is one rank of fallback. The cascade stops at the "
+        "last trustworthy rank; below that is unresolved water.</p>",
+        unsafe_allow_html=True,
+    )
+    tree_col, photo_col = st.columns([1.35, 0.85], vertical_alignment="top")
+    with tree_col:
+        render_depth_tree(prediction, heading=False)
+    with photo_col:
+        render_reference_photo(prediction)
     return prediction
 
 

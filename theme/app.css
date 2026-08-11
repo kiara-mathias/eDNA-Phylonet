@@ -248,6 +248,35 @@ textarea {
   gap: 1rem;
 }
 
+.ref-photo {
+  background: var(--edna-navy);
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--edna-navy) 16%, transparent);
+}
+
+.ref-photo .silhouette {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.ref-photo .mono-quiet {
+  color: var(--edna-sand);
+  padding: 0.55rem 0.75rem 0.7rem;
+  margin: 0;
+}
+
+[data-testid="stImage"] {
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--edna-navy);
+}
+
+[data-testid="stImage"] img {
+  border-radius: 8px;
+}
+
 iframe[title="depth-tree"] {
   background: transparent;
 }

@@ -239,16 +239,17 @@ def build_depth_tree_html(prediction: FallbackPrediction) -> str:
 """
 
 
-def render_depth_tree(prediction: FallbackPrediction) -> None:
+def render_depth_tree(prediction: FallbackPrediction, *, heading: bool = True) -> None:
     import streamlit as st
 
-    st.markdown(
-        '<p class="panel-kicker">Taxonomic depth</p>'
-        '<p class="panel-lede">Shallow water is a species-level call. '
-        "Each node darker is one rank of fallback. The cascade stops at the "
-        "last trustworthy rank; below that is unresolved water.</p>",
-        unsafe_allow_html=True,
-    )
+    if heading:
+        st.markdown(
+            '<p class="panel-kicker">Taxonomic depth</p>'
+            '<p class="panel-lede">Shallow water is a species-level call. '
+            "Each node darker is one rank of fallback. The cascade stops at the "
+            "last trustworthy rank; below that is unresolved water.</p>",
+            unsafe_allow_html=True,
+        )
     components.html(
         build_depth_tree_html(prediction),
         height=TREE_IFRAME_HEIGHT,

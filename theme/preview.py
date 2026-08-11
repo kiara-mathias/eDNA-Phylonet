@@ -15,6 +15,7 @@ import streamlit as st
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.depth_tree import render_depth_tree  # noqa: E402
+from app.species_image import render_reference_photo  # noqa: E402
 from src.fallback.novelty import FallbackPrediction, NeighborHit  # noqa: E402
 from theme.inject import inject_theme  # noqa: E402
 
@@ -81,7 +82,11 @@ def main() -> None:
     st.warning("Novel taxon — closest known relative: Gadus morhua.")
     tabs = st.tabs(["Identify", "Evidence", "Method"])
     with tabs[0]:
-        render_depth_tree(_demo_prediction())
+        tree_col, photo_col = st.columns([1.35, 0.85], vertical_alignment="top")
+        with tree_col:
+            render_depth_tree(_demo_prediction())
+        with photo_col:
+            render_reference_photo(_demo_prediction())
     with tabs[1]:
         st.dataframe(pd.DataFrame({"rank": ["species", "genus"], "confidence": [0.12, 0.71]}), hide_index=True)
     with tabs[2]:
