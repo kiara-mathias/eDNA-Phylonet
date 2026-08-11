@@ -15,6 +15,7 @@ import streamlit as st
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.depth_tree import render_depth_tree  # noqa: E402
+from app.family_icons import result_callout_html  # noqa: E402
 from app.species_image import render_reference_photo  # noqa: E402
 from src.fallback.novelty import FallbackPrediction, NeighborHit  # noqa: E402
 from theme.inject import inject_theme  # noqa: E402
@@ -78,8 +79,9 @@ def main() -> None:
     )
     st.text_input("Sequence accession", placeholder="BOLD:AAI1234")
     st.button("Identify this specimen", type="primary")
-    st.success("Resolved at species: Gadus morhua")
-    st.warning("Novel taxon — closest known relative: Gadus morhua.")
+    st.markdown(result_callout_html(_demo_prediction()), unsafe_allow_html=True)
+    st.success("Streamlit alert (error/info still used for validation).")
+    st.warning("Unused default warning, for CSS checks.")
     tabs = st.tabs(["Identify", "Evidence", "Method"])
     with tabs[0]:
         tree_col, photo_col = st.columns([1.35, 0.85], vertical_alignment="top")
