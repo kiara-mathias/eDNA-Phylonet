@@ -59,7 +59,8 @@ edna-classifier/
   src/
     ingest/            # BOLD pull scripts (implemented)
     preprocess/        # cleaning, QC (implemented)
-    features/          # KmerPCAEncoder (implemented); learned encoder not yet
+    features/          # KmerPCAEncoder (default) + ConvTripletEncoder (1D CNN);
+                       # optional frozen DNABERT via HuggingFaceDNAEncoder
     model/             # Paper2Classifier: taxonomy+geo nearest-centroid (implemented)
     fallback/          # HierarchicalFallback: cascading novelty flagging (implemented)
     eval/              # clade-exclusion splitter, baseline/fallback validation,
@@ -148,6 +149,21 @@ actually correct.
 #     data/eval_results/calibration/.
 python -m src.eval.validate_calibration --config configs/eval.yaml
 ```
+
+```bash
+# 5c. Learned encoder: same HierarchicalFallback, k-mer+PCA vs a small 1D
+#     CNN trained with triplet loss (and optionally a frozen DNABERT-style
+#     Hugging Face model -- extra torch/transformers deps, no fine-tuning).
+#     Re-runs Step 1 ECE and Step 2 accuracy / false-confident-wrong-call
+#     rate on identical holdout splits. Writes
+#     data/eval_results/encoder_comparison/.
+python -m src.eval.compare_encoders --config configs/eval.yaml
+```
+
+Set `encoder.name: conv_triplet` in [`configs/eval.yaml`](configs/eval.yaml)
+(or `configs/app.yaml` for the dashboard) to run any single script --
+`validate_calibration`, `validate_fallback`, `benchmark` -- on the CNN
+instead of k-mer+PCA. The fallback hyperparameters do not change.
 
 ## Benchmarking
 

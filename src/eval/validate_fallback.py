@@ -38,7 +38,7 @@ import pandas as pd  # noqa: E402
 
 from src.common import load_config, resolve_path  # noqa: E402
 from src.fallback.novelty import HierarchicalFallback  # noqa: E402
-from src.features.kmer_pca import KmerPCAEncoder  # noqa: E402
+from src.features.encoder import build_encoder  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -61,12 +61,8 @@ def evaluate_split(split: dict[str, Any], sequences_df: pd.DataFrame, config: di
     val_df = by_id.loc[split["val_process_ids"]].reset_index()
     test_df = by_id.loc[split["test_process_ids"]].reset_index()
 
-    encoder = KmerPCAEncoder(
-        k=encoder_cfg["k"],
-        n_components=encoder_cfg["n_components"],
-        random_state=encoder_cfg["random_state"],
-    )
-    train_embeddings = encoder.fit_transform(train_df["sequence"])
+    encoder = build_encoder(encoder_cfg)
+    train_embeddings = encoder.fit_transform(train_df["sequence"], train_df["species"])
     val_embeddings = encoder.transform(val_df["sequence"])
     test_embeddings = encoder.transform(test_df["sequence"])
 

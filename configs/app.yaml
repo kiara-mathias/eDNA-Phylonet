@@ -16,6 +16,7 @@ val_fraction: 0.15
 seed: 42
 
 encoder:
+  name: kmer_pca
   k: 4
   n_components: 50
   random_state: 42

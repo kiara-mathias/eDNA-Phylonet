@@ -22,10 +22,35 @@ splitter:
   splits_dir: data/splits
 
 encoder:
+  # "kmer_pca" (default), "conv_triplet" (small 1D CNN + triplet loss),
+  # or "dnabert" (frozen Hugging Face DNA model; optional extra deps).
+  name: kmer_pca
   # k-mer size for the frequency-vector encoder (4^k dimensions before PCA).
   k: 4
   n_components: 50
   random_state: 42
+  conv_triplet:
+    embedding_dim: 32
+    n_filters: 16
+    kernel_size: 7
+    max_len: 256
+    epochs: 8
+    batch_size: 32
+    learning_rate: 0.05
+    margin: 0.4
+    # Cap the triplet-training subset so a full BOLD table stays CPU-feasible.
+    max_train_sequences: 2000
+  dnabert:
+    model_id: zhihan1996/DNABERT-2-117M
+    max_len: 256
+    batch_size: 8
+    device: cpu
+    trust_remote_code: true
+
+encoder_comparison:
+  names: [kmer_pca, conv_triplet]
+  default_confidence_threshold: 0.5
+  output_dir: data/eval_results/encoder_comparison
 
 classifier:
   # Weights for combining normalized sequence-embedding distance and

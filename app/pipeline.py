@@ -21,14 +21,14 @@ from sklearn.model_selection import train_test_split
 
 from src.common import load_config, resolve_path
 from src.fallback.novelty import FallbackPrediction, HierarchicalFallback
-from src.features.kmer_pca import KmerPCAEncoder
+from src.features.encoder import SequenceEncoder, build_encoder
 
 _VALID_BASES = set("ACGTN")
 
 
 @dataclass
 class Pipeline:
-    encoder: KmerPCAEncoder
+    encoder: SequenceEncoder
     fallback: HierarchicalFallback
     n_train: int
     n_val: int
@@ -79,12 +79,8 @@ def load_pipeline(config: dict[str, Any]) -> Pipeline:
     val_df = val_df.reset_index(drop=True)
 
     encoder_cfg = config["encoder"]
-    encoder = KmerPCAEncoder(
-        k=encoder_cfg["k"],
-        n_components=encoder_cfg["n_components"],
-        random_state=encoder_cfg["random_state"],
-    )
-    train_embeddings = encoder.fit_transform(train_df["sequence"])
+    encoder = build_encoder(encoder_cfg)
+    train_embeddings = encoder.fit_transform(train_df["sequence"], train_df["species"])
     val_embeddings = encoder.transform(val_df["sequence"])
 
     classifier_cfg = config["classifier"]

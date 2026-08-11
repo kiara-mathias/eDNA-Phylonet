@@ -19,8 +19,6 @@ Implemented:
 - ``benchmark.py``: runs the full Step 6 comparison -- our system vs. the
   three ``src/baselines`` -- reporting per-rank coverage + accuracy-among-
   answered across all three holdout levels.
-
-Not yet implemented: coverage/confidence *curves* (varying calibration
-thresholds and plotting the tradeoff) -- this pass reports point estimates
-at the currently-configured thresholds only.
+- ``compare_encoders.py``: same ``HierarchicalFallback`` on identical
+  splits, k-mer+PCA vs. the learned CNN (Step 1 ECE + Step 2 accuracy/FCW).
 """

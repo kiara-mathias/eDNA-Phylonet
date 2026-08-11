@@ -54,7 +54,8 @@ class KmerPCAEncoder:
     def _frequency_matrix(self, sequences: Iterable[str]) -> np.ndarray:
         return np.stack([self._kmer_frequencies(s) for s in sequences])
 
-    def fit(self, sequences: Iterable[str]) -> "KmerPCAEncoder":
+    def fit(self, sequences: Iterable[str], labels: Iterable[str] | None = None) -> "KmerPCAEncoder":
+        """Fit PCA. ``labels`` is ignored (kept so callers can swap encoders)."""
         freqs = self._frequency_matrix(sequences)
         # Guard against pathologically small fit sets (e.g. in unit tests)
         # where n_components would otherwise exceed min(n_samples, n_features).
@@ -69,5 +70,5 @@ class KmerPCAEncoder:
         freqs = self._frequency_matrix(sequences)
         return self._pca.transform(freqs)
 
-    def fit_transform(self, sequences: Iterable[str]) -> np.ndarray:
-        return self.fit(sequences).transform(sequences)
+    def fit_transform(self, sequences: Iterable[str], labels: Iterable[str] | None = None) -> np.ndarray:
+        return self.fit(sequences, labels).transform(sequences)
