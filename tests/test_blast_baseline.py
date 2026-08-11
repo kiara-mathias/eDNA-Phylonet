@@ -13,9 +13,9 @@ import random
 import pandas as pd
 import pytest
 
-from src.baselines.blast_baseline import BlastBaseline, _write_fasta
+from src.baselines.blast_baseline import BlastBaseline, blast_score_to_confidence, _write_fasta
 
-pytestmark = pytest.mark.skipif(
+_blast_required = pytest.mark.skipif(
     not BlastBaseline.is_available(),
     reason="blastn/makeblastdb not found on PATH (expected on this dev machine; installed in CI)",
 )
@@ -51,6 +51,15 @@ _TRAIN_ROWS = [
 ]
 
 
+def test_blast_score_to_confidence_increases_with_bitscore():
+    low = blast_score_to_confidence(bitscore=20.0, evalue=1e-5)
+    high = blast_score_to_confidence(bitscore=200.0, evalue=1e-80)
+    assert 0.0 <= low < high <= 1.0
+    assert blast_score_to_confidence(bitscore=None, evalue=None) == 0.0
+    # e-value fallback when bitscore is missing: smaller e-value → higher confidence.
+    assert blast_score_to_confidence(None, 1e-20) > blast_score_to_confidence(None, 1.0)
+
+
 def test_write_fasta_format(tmp_path):
     df = pd.DataFrame(_TRAIN_ROWS)
     fasta_path = tmp_path / "seqs.fasta"
@@ -63,6 +72,7 @@ def test_write_fasta_format(tmp_path):
     assert _TRAIN_ROWS[0]["sequence"] in content
 
 
+@_blast_required
 def test_fit_and_predict_exact_match(tmp_path):
     train_df = pd.DataFrame(_TRAIN_ROWS)
     test_df = pd.DataFrame(
@@ -77,8 +87,11 @@ def test_fit_and_predict_exact_match(tmp_path):
     assert predictions[0].genus == "A"
     assert predictions[0].family == "FA"
     assert predictions[0].order == "OA"
+    assert predictions[0].nearest["species"] == "A a"
+    assert 0.0 < predictions[0].confidence["species"] <= 1.0
 
 
+@_blast_required
 def test_query_with_no_hit_returns_no_answer(tmp_path):
     train_df = pd.DataFrame(_TRAIN_ROWS)
     # An unrelated, independently-random sequence -- ~25% expected identity
@@ -93,6 +106,8 @@ def test_query_with_no_hit_returns_no_answer(tmp_path):
     assert predictions[0].genus is None
     assert predictions[0].family is None
     assert predictions[0].order is None
+    assert predictions[0].confidence["species"] == 0.0
+    assert predictions[0].nearest == {}
 
 
 def test_predict_before_fit_raises(tmp_path):

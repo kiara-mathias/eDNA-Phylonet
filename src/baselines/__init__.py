@@ -24,20 +24,28 @@ does (except BLAST, which instead fails outright below a %identity cutoff)
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass
 class BaselinePrediction:
     """One query's prediction from a baseline system.
 
-    All three baselines share this shape so ``src/eval/benchmark.py`` can
-    score them uniformly. ``None`` at a given rank means "no answer" (only
-    ever produced by ``BlastBaseline`` in this pass); the two ML baselines
-    always fill every rank.
+    All three baselines share this shape so ``src/eval/benchmark.py`` and
+    ``src/eval/head_to_head.py`` can score them uniformly. ``None`` at a
+    given rank means "no answer" (only ever produced by ``BlastBaseline``
+    at its operating-point cutoff); the two ML baselines always fill every
+    rank.
+
+    ``confidence`` is a per-rank score in ``[0, 1]`` used for
+    false-confident-wrong-call curves. ``nearest`` is the top/nearest label
+    at each rank even when the operating point abstained (BLAST below
+    ``min_pident``) -- that is what the threshold sweep scores.
     """
 
     species: str | None
     genus: str | None
     family: str | None
     order: str | None
+    confidence: dict[str, float] = field(default_factory=dict)
+    nearest: dict[str, str] = field(default_factory=dict)

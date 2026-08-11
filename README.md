@@ -66,7 +66,9 @@ edna-classifier/
     model/             # Paper2Classifier: taxonomy+geo nearest-centroid (implemented)
     fallback/          # HierarchicalFallback: cascading novelty flagging (implemented)
     eval/              # clade-exclusion splitter, baseline/fallback validation,
-                       # and the BLAST/Naive-Bayes/1-NN benchmark (all implemented)
+                       # confidence calibration (ECE/reliability), BLAST/Naive-
+                       # Bayes/1-NN benchmark, and head-to-head accuracy/FCW
+                       # table+plot (all implemented)
     baselines/         # NaiveBayesBaseline, NearestNeighborBaseline, BlastBaseline
   app/                 # Streamlit dashboard: pipeline.py + dashboard.py (implemented)
   configs/             # YAML config per experiment
@@ -142,6 +144,15 @@ seen species), ~90% still get a confident species call, consistent with
 the 90th-percentile calibration, with ~88-90% of those species calls
 actually correct.
 
+```bash
+# 5b. Prove reported confidence is calibrated on the same held-out genera.
+#     Dumps confidence+correctness per query/rank, writes a reliability
+#     diagram, reports ECE per rank, and (if ECE > 0.1) fits isotonic /
+#     Platt recalibrators leave-one-holdout-out then re-scores. Writes
+#     data/eval_results/calibration/.
+python -m src.eval.validate_calibration --config configs/eval.yaml
+```
+
 ## Benchmarking
 
 ```bash
@@ -169,6 +180,17 @@ in [`configs/eval.yaml`](configs/eval.yaml)). The BLAST row requires
 local development, skipped with a logged warning if absent -- see
 `src/baselines/blast_baseline.py`).
 
+```bash
+# 6b. Standardized head-to-head on the same held-out splits: BLAST, Naive
+#     Bayes, 1-NN, and our system. Per method per rank: accuracy (abstention
+#     counts as wrong) and false-confident-wrong-call rate, also restricted
+#     to the novel/held-out-genera subset. Writes one table (method × rank
+#     × metric) and one plot (FCW rate vs. confidence threshold, one line
+#     per method). BLAST uses bitscore (e-value fallback) as its score.
+#     Writes data/eval_results/head_to_head/.
+python -m src.eval.head_to_head --config configs/eval.yaml
+```
+
 Reported confidence in the fallback (and dashboard) is distance-based
 confidence multiplied by sample-count reliability
 `n / (n + sample_count_prior)`, so thinly sampled centroids cannot look as
@@ -178,10 +200,10 @@ decisions still use raw distance vs. the calibrated threshold.
 ## Dashboard
 
 ```bash
-# 7. Launch the interactive dashboard: paste/upload a DNA sequence and get
-#    a hierarchical, novelty-aware prediction, plus a tab showing the
-#    Step 6 benchmark comparison (if data/eval_results/benchmark.json
-#    exists).
+# 7. Launch the interactive dashboard: paste a DNA sequence for a
+#    hierarchical, novelty-aware prediction, plus tabs for the Step 6
+#    benchmark, the Step 1 calibration curve, the BLAST-vs-fallback
+#    gallery, and the Step 2 false-confident-wrong chart.
 streamlit run app/dashboard.py
 ```
 
@@ -192,6 +214,17 @@ a friendly "run ingestion first" message instead of crashing if the data
 isn't there yet. See [`configs/app.yaml`](configs/app.yaml) for why this
 uses a random validation split rather than the genus-exclusion splits in
 `configs/eval.yaml` -- the deployed model should use every known genus.
+
+Evidence panels (matched to the calibration / head-to-head / nearest-
+relative work, not a substitute for running those scripts):
+
+- **Calibration** reads `data/eval_results/calibration/calibration.json`
+  and, when `heldout_predictions.parquet` is present, re-bins the
+  reliability diagram live.
+- **BLAST would have lied** is five hardcoded 50% genus-holdout contrasts
+  (wrong-confident BLAST vs. honest fallback + top-k relatives).
+- **False-confident wrong** reads `data/eval_results/head_to_head/head_to_head.json`,
+  toggles methods, and slides the confidence threshold along the saved curve.
 
 ## Running tests
 

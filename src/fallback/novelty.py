@@ -80,6 +80,8 @@ class FallbackPrediction:
     genus-level call still fills in family/order).
     ``support`` is the training-sample count of the nearest label at each
     rank (used to deflate ``confidence`` for thinly sampled centroids).
+    ``nearest`` is the nearest training label at each rank regardless of
+    whether the cascade committed there (needed for confidence calibration).
     ``nearest_species`` / ``nearest_genera`` are the top-k known centroids
     at those ranks (always filled; the dashboard surfaces them when the
     read is flagged novel). ``closest_relative_species`` is the top species
@@ -96,6 +98,7 @@ class FallbackPrediction:
     confidence: dict[str, float]
     distance: dict[str, float]
     support: dict[str, int]
+    nearest: dict[str, str]
     nearest_species: list[NeighborHit]
     nearest_genera: list[NeighborHit]
 
@@ -343,10 +346,12 @@ class HierarchicalFallback:
 
             confidence: dict[str, float] = {}
             support: dict[str, int] = {}
+            nearest_labels: dict[str, str] = {}
             for rank in _RANKS:
                 threshold = self.thresholds_[rank]
                 dist = nearest[rank][1]
                 n_support = nearest[rank][2]
+                nearest_labels[rank] = nearest[rank][0]
                 support[rank] = n_support
                 if threshold <= 1e-12:
                     distance_confidence = 1.0 if dist <= 1e-12 else 0.0
@@ -388,6 +393,7 @@ class HierarchicalFallback:
                     confidence=confidence,
                     distance={rank: nearest[rank][1] for rank in _RANKS},
                     support=support,
+                    nearest=nearest_labels,
                     nearest_species=nearest_species,
                     nearest_genera=nearest_genera,
                 )

@@ -64,6 +64,8 @@ classifier:
 fallback:
   rank_percentile: 90.0
 benchmark_results_path: data/eval_results/benchmark.json
+calibration_results_path: data/eval_results/calibration/calibration.json
+head_to_head_results_path: data/eval_results/head_to_head/head_to_head.json
 """,
         encoding="utf-8",
     )
@@ -167,6 +169,7 @@ def test_nearest_relatives_dataframe_lists_species_then_genera_in_given_order():
         confidence={rank: 0.0 for rank in ("species", "genus", "family", "order")},
         distance={rank: 1.0 for rank in ("species", "genus", "family", "order")},
         support={rank: 1 for rank in ("species", "genus", "family", "order")},
+        nearest={rank: "A a" if rank == "species" else "A" for rank in ("species", "genus", "family", "order")},
         nearest_species=[
             NeighborHit(label="A a", rank="species", distance=0.1, support=3, genus="A", family="FA", order="OA"),
             NeighborHit(label="B b", rank="species", distance=0.4, support=2, genus="B", family="FB", order="OB"),
@@ -181,6 +184,105 @@ def test_nearest_relatives_dataframe_lists_species_then_genera_in_given_order():
     assert list(table["Label"]) == ["A a", "B b", "A"]
     assert list(table["Taxon rank"]) == ["Species", "Species", "Genus"]
     assert list(table["Rank"]) == [1, 2, 1]
+
+
+def test_dashboard_gallery_tab_renders_hardcoded_examples(isolated_project):
+    at = AppTest.from_file(_DASHBOARD_PATH)
+    at.run(timeout=60)
+
+    assert not at.exception
+    gallery = at.tabs[3]
+    assert len(gallery.expander) == 5
+
+
+def test_dashboard_calibration_tab_shows_missing_message(isolated_project):
+    at = AppTest.from_file(_DASHBOARD_PATH)
+    at.run(timeout=60)
+
+    assert not at.exception
+    assert len(at.tabs[2].info) >= 1
+
+
+def test_dashboard_calibration_tab_renders_saved_curve(isolated_project):
+    calib_dir = isolated_project / "data" / "eval_results" / "calibration"
+    calib_dir.mkdir(parents=True)
+    summary = {
+        "n_bins": 2,
+        "decision": "pass",
+        "raw": {
+            "ece_by_rank": {"species": 0.05, "genus": 0.04, "family": 0.08, "order": 0.02},
+            "reports": [
+                {
+                    "rank": rank,
+                    "n": 10,
+                    "ece": 0.05,
+                    "bins": [
+                        {
+                            "bin_index": 0,
+                            "conf_low": 0.0,
+                            "conf_high": 0.5,
+                            "mean_confidence": 0.25,
+                            "accuracy": 0.3,
+                            "count": 4,
+                        },
+                        {
+                            "bin_index": 1,
+                            "conf_low": 0.5,
+                            "conf_high": 1.0,
+                            "mean_confidence": 0.8,
+                            "accuracy": 0.7,
+                            "count": 6,
+                        },
+                    ],
+                }
+                for rank in ("species", "genus", "family", "order")
+            ],
+        },
+        "recalibrated": None,
+    }
+    (calib_dir / "calibration.json").write_text(json.dumps(summary), encoding="utf-8")
+
+    at = AppTest.from_file(_DASHBOARD_PATH)
+    at.run(timeout=60)
+
+    assert not at.exception
+    assert len(at.tabs[2].metric) >= 4
+
+
+def test_dashboard_fcw_tab_renders_when_results_exist(isolated_project):
+    out_dir = isolated_project / "data" / "eval_results" / "head_to_head"
+    out_dir.mkdir(parents=True)
+    payload = {
+        "table_holdout_fraction": 0.5,
+        "default_confidence_threshold": 0.5,
+        "splits": [
+            {
+                "holdout_fraction": 0.5,
+                "thresholds": [0.0, 0.5, 1.0],
+                "systems": {
+                    "ours": {
+                        "novel": {
+                            rank: {"fcw_curve": [0.2, 0.1, 0.0]}
+                            for rank in ("species", "genus", "family", "order")
+                        },
+                        "all": {
+                            rank: {"fcw_curve": [0.3, 0.15, 0.0]}
+                            for rank in ("species", "genus", "family", "order")
+                        },
+                    },
+                    "blast": None,
+                },
+            }
+        ],
+    }
+    (out_dir / "head_to_head.json").write_text(json.dumps(payload), encoding="utf-8")
+
+    at = AppTest.from_file(_DASHBOARD_PATH)
+    at.run(timeout=60)
+
+    assert not at.exception
+    assert len(at.tabs[4].slider) >= 1
+    assert len(at.tabs[4].multiselect) >= 1
 
 
 def test_dashboard_shows_missing_benchmark_message_when_no_results(isolated_project):
