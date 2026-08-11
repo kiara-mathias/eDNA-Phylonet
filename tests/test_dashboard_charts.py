@@ -8,6 +8,7 @@ import pytest
 from app.dashboard_charts import (
     benchmark_bar_frame,
     build_benchmark_bar_figure,
+    build_reliability_figure,
     fcw_at_threshold,
     fcw_callout_row,
     fcw_curve_frame,
@@ -17,7 +18,7 @@ from app.dashboard_charts import (
     reliability_frame,
     split_at_holdout,
 )
-from app.gallery_examples import BLAST_LIE_EXAMPLES, gallery_examples
+from app.gallery_examples import BLAST_LIE_EXAMPLES, gallery_examples, lie_card_html
 
 
 def test_gallery_has_three_to_five_held_out_contrasts():
@@ -36,6 +37,16 @@ def test_gallery_has_three_to_five_held_out_contrasts():
         assert example.true_genus not in {hit.genus for hit in example.nearest_genera}
 
 
+def test_lie_card_html_flags_blast_and_keeps_honest_call():
+    example = BLAST_LIE_EXAMPLES[0]
+    html = lie_card_html(example, photo_html="<svg class='silhouette'></svg>")
+    assert "lie-card" in html
+    assert f"BLAST said: {example.blast_species}" in html
+    assert example.true_species in html
+    assert "novel" in html
+    assert "silhouette" in html
+
+
 def test_reliability_frame_drops_empty_bins():
     reports = [
         {
@@ -50,6 +61,11 @@ def test_reliability_frame_drops_empty_bins():
     frame = reliability_frame(reports)
     assert list(frame["mean_confidence"]) == [0.8]
     assert list(frame["accuracy"]) == [0.5]
+    fig = build_reliability_figure(frame)
+    names = [trace.name for trace in fig.data]
+    assert names[0] == "perfect"
+    assert any(name.startswith("species") for name in names)
+    assert fig.data[0].line.dash == "dash"
 
 
 def test_live_reliability_reports_match_bin_counts():

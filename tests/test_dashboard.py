@@ -235,7 +235,10 @@ def test_dashboard_gallery_renders_hardcoded_examples(isolated_project):
     at.run(timeout=60)
 
     assert not at.exception
-    assert len(at.expander) == 5
+    assert len(at.expander) == 0
+    blob = " ".join(str(m.value) for m in at.markdown)
+    assert blob.count('class="lie-card"') == 5
+    assert "BLAST said:" in blob
 
 
 def test_dashboard_fcw_renders_when_results_exist(isolated_project):

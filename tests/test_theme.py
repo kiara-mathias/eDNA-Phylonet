@@ -18,3 +18,6 @@ def test_load_css_overrides_core_streamlit_widgets():
     assert ".family-icon" in css
     assert ".result-callout" in css
     assert ".fcw-callout" in css
+    assert "background-attachment: fixed" in css
+    assert ".record-header::before" in css
+    assert ".lie-card" in css

@@ -11,7 +11,10 @@ pipeline.
 
 from __future__ import annotations
 
+import html
 from dataclasses import dataclass
+
+from app.family_icons import family_icon_svg
 
 _RANKS = ("species", "genus", "family", "order")
 
@@ -257,6 +260,29 @@ BLAST_LIE_EXAMPLES: tuple[BlastLieExample, ...] = (
 def gallery_examples() -> tuple[BlastLieExample, ...]:
     """3–5 hardcoded held-out BLAST-vs-fallback contrasts."""
     return BLAST_LIE_EXAMPLES
+
+
+def lie_card_html(example: BlastLieExample, photo_html: str) -> str:
+    """One gallery card: photo, coral BLAST call, honest fallback line."""
+    rank = example.ours_predicted_rank or "unresolved"
+    ours = (
+        f"novel · {rank}"
+        if example.ours_is_novel
+        else str(example.ours_species or rank)
+    )
+    icon = family_icon_svg(example.true_family, width=56)
+    return (
+        f'<article class="lie-card">'
+        f'<div class="lie-photo">{photo_html}</div>'
+        f'<div class="lie-body">'
+        f'<div class="lie-card-head">{icon}</div>'
+        f'<div class="coral-flag">BLAST said: {html.escape(example.blast_species)}</div>'
+        f'<div class="mono-quiet">{example.blast_pident:.1f}% identity · '
+        f"bitscore {example.blast_bitscore:.0f}</div>"
+        f'<div class="name">true · {html.escape(example.true_species)}</div>'
+        f'<div class="mono-quiet">ours · {html.escape(ours)}</div>'
+        f"</div></article>"
+    )
 
 
 def ranks() -> tuple[str, ...]:
