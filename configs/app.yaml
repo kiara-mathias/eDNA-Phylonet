@@ -31,7 +31,11 @@ fallback:
   # benchmarked HierarchicalFallback (see sample_count_prior there).
   sample_count_prior: 5.0
 
-# Written by src/eval/benchmark.py; the dashboard's Benchmark tab reads
-# this to render the Step 6 comparison results (shows a "run benchmark
-# first" message if missing).
+# Written by src/eval/benchmark.py; the dashboard renders coverage/accuracy
+# if this file exists (omits the table if missing).
 benchmark_results_path: data/eval_results/benchmark.json
+
+# Written by src/eval/validate_calibration.py. Reliability curve +
+# BLAST-lie gallery + FCW-vs-threshold chart omit themselves when absent.
+calibration_summary_path: data/eval_results/calibration/calibration.json
+calibration_predictions_path: data/eval_results/calibration/heldout_predictions.parquet

@@ -185,3 +185,14 @@ def test_probability_calibrator_remaps_reported_confidence():
     fb.set_probability_calibrators({rank: _Const() for rank in ("species", "genus", "family", "order")})
     predictions = fb.predict(np.array([[0.0, 0.0]]), latlon=None)
     assert predictions[0].confidence["species"] == pytest.approx(0.25, abs=1e-9)
+
+
+def test_nearest_k_at_rank_orders_by_cascade_distance():
+    fb = _fitted_calibrated()
+    hits = fb.nearest_k_at_rank("species", np.array([0.0, 0.0]), latlon_row=None, k=2)
+
+    assert len(hits) == 2
+    assert hits[0][0] == "A a"
+    assert hits[1][0] == "B b"
+    assert hits[0][1] < hits[1][1]
+    assert hits[0][2] >= 1

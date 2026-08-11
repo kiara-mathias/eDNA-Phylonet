@@ -12,7 +12,13 @@ import random
 import pandas as pd
 import pytest
 
-from app.pipeline import SequenceParseError, classify_sequence, clean_sequence_text, load_pipeline
+from app.pipeline import (
+    SequenceParseError,
+    classify_sequence,
+    clean_sequence_text,
+    load_pipeline,
+    nearest_relatives,
+)
 
 _RANKS = ("species", "genus", "family", "order")
 
@@ -119,3 +125,16 @@ class TestLoadPipelineAndClassify:
 
         assert prediction.predicted_rank in _RANKS or prediction.predicted_rank is None
         assert prediction.closest_relative_species is not None
+
+    def test_nearest_relatives_returns_ranked_known_species(self, tmp_path):
+        df = _synthetic_sequences_df()
+        parquet_path = tmp_path / "sequences.parquet"
+        df.to_parquet(parquet_path)
+
+        pipeline = load_pipeline(_config(parquet_path))
+        relatives = nearest_relatives(pipeline, df.iloc[0]["sequence"], k=3)
+
+        assert 1 <= len(relatives) <= 3
+        assert relatives[0].species in set(df["species"])
+        distances = [hit.distance for hit in relatives]
+        assert distances == sorted(distances)

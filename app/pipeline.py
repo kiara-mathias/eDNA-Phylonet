@@ -38,6 +38,18 @@ class Pipeline:
     n_orders: int
 
 
+@dataclass(frozen=True)
+class RelativeHit:
+    """One nearest known species under the same distance the cascade uses."""
+
+    species: str
+    distance: float
+    support: int
+    genus: str | None
+    family: str | None
+    order: str | None
+
+
 class SequenceParseError(ValueError):
     """Raised when pasted/uploaded input has no usable sequence in it."""
 
@@ -114,6 +126,17 @@ def _latlon_array(df: pd.DataFrame) -> np.ndarray | None:
     return df[["lat", "lon"]].to_numpy(dtype=np.float64)
 
 
+def _query_embedding(
+    pipeline: Pipeline,
+    sequence: str,
+    lat: float | None = None,
+    lon: float | None = None,
+) -> tuple[np.ndarray, np.ndarray | None]:
+    embedding = pipeline.encoder.transform([sequence])
+    latlon = np.array([[lat, lon]], dtype=np.float64) if lat is not None and lon is not None else None
+    return embedding, latlon
+
+
 def classify_sequence(
     pipeline: Pipeline,
     sequence: str,
@@ -121,9 +144,38 @@ def classify_sequence(
     lon: float | None = None,
 ) -> FallbackPrediction:
     """Runs one cleaned sequence through the fitted pipeline."""
-    embedding = pipeline.encoder.transform([sequence])
-    latlon = np.array([[lat, lon]], dtype=np.float64) if lat is not None and lon is not None else None
+    embedding, latlon = _query_embedding(pipeline, sequence, lat, lon)
     return pipeline.fallback.predict(embedding, latlon)[0]
+
+
+def nearest_relatives(
+    pipeline: Pipeline,
+    sequence: str,
+    lat: float | None = None,
+    lon: float | None = None,
+    k: int = 5,
+) -> list[RelativeHit]:
+    """Top-``k`` known species by cascade distance, with their training taxonomy."""
+    embedding, latlon = _query_embedding(pipeline, sequence, lat, lon)
+    latlon_row = latlon[0] if latlon is not None else None
+    hits = pipeline.fallback.nearest_k_at_rank("species", embedding[0], latlon_row, k=k)
+    relatives: list[RelativeHit] = []
+    for species, distance, support in hits:
+        genus = family = order = None
+        taxonomy = pipeline.fallback.taxonomy_for_species(species)
+        if taxonomy is not None:
+            genus, family, order = taxonomy
+        relatives.append(
+            RelativeHit(
+                species=species,
+                distance=distance,
+                support=support,
+                genus=genus,
+                family=family,
+                order=order,
+            )
+        )
+    return relatives
 
 
 def load_app_config(config_path: str = "configs/app.yaml") -> dict[str, Any]:

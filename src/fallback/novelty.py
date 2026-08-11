@@ -195,9 +195,10 @@ class HierarchicalFallback:
 
         return self
 
-    def _nearest_at_rank(
+    def _combined_distances(
         self, rank: str, embedding: np.ndarray, latlon_row: np.ndarray | None
-    ) -> tuple[str, float, int]:
+    ) -> np.ndarray:
+        """Per-label scaled distances at ``rank`` (same units as the cascade threshold)."""
         centroids = self._rank_centroids[rank]
 
         seq_dist = np.linalg.norm(centroids.seq_centroids - embedding, axis=1)
@@ -216,8 +217,42 @@ class HierarchicalFallback:
                 geo_scaled = geo_dist / centroids.geo_scale
                 combined[geo_mask] = self.seq_weight * seq_scaled[geo_mask] + self.geo_weight * geo_scaled
 
+        return combined
+
+    def _nearest_at_rank(
+        self, rank: str, embedding: np.ndarray, latlon_row: np.ndarray | None
+    ) -> tuple[str, float, int]:
+        centroids = self._rank_centroids[rank]
+        combined = self._combined_distances(rank, embedding, latlon_row)
         best_idx = int(np.argmin(combined))
         return centroids.labels[best_idx], float(combined[best_idx]), int(centroids.n_samples[best_idx])
+
+    def nearest_k_at_rank(
+        self,
+        rank: str,
+        embedding: np.ndarray,
+        latlon_row: np.ndarray | None = None,
+        k: int = 5,
+    ) -> list[tuple[str, float, int]]:
+        """Top-``k`` labels at ``rank`` by the same distance the cascade uses."""
+        if not self._rank_centroids:
+            raise RuntimeError("HierarchicalFallback.fit() must be called before nearest_k_at_rank()")
+        if k < 1:
+            raise ValueError("k must be >= 1")
+
+        centroids = self._rank_centroids[rank]
+        combined = self._combined_distances(rank, embedding, latlon_row)
+        order = np.argsort(combined)
+        hits: list[tuple[str, float, int]] = []
+        for idx in order[: min(k, len(order))]:
+            hits.append(
+                (
+                    centroids.labels[int(idx)],
+                    float(combined[int(idx)]),
+                    int(centroids.n_samples[int(idx)]),
+                )
+            )
+        return hits
 
     def calibrate(
         self,
@@ -255,6 +290,10 @@ class HierarchicalFallback:
 
         self.thresholds_ = thresholds
         return self
+
+    def taxonomy_for_species(self, species: str) -> tuple[str, str, str] | None:
+        """Return ``(genus, family, order)`` for a training species, if known."""
+        return self._species_taxonomy.get(species)
 
     def predict(
         self,

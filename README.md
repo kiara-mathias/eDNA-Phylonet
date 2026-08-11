@@ -201,12 +201,22 @@ decisions still use raw distance vs. the calibrated threshold.
 ## Dashboard
 
 ```bash
-# 7. Launch the interactive dashboard: paste/upload a DNA sequence and get
-#    a hierarchical, novelty-aware prediction, plus a tab showing the
-#    Step 6 benchmark comparison (if data/eval_results/benchmark.json
-#    exists).
+# 7. Launch the interactive specimen record: paste a DNA sequence and get
+#    a hierarchical, novelty-aware prediction. Calibration, BLAST-lie
+#    cases, and false-confident-wrong curves render below when the Step 6/8
+#    eval artifacts exist.
 streamlit run app/dashboard.py
 ```
+
+The page is a single vertical scroll (not a sidebar of metric cards). Color
+is taxonomic confidence as ocean depth: species-level calls sit in shallow
+seafoam, order-level fallback in deep navy -- the same cascade
+`HierarchicalFallback` uses, made visible. The taxonomic depth tree is the
+only element that animates (rank-by-rank reveal). Reliability, nearest
+relatives (when the read is flagged novel), a gallery of held-out queries
+where a species-level identity call would have been confidently wrong, and
+an interactive false-confident-wrong-vs-threshold chart follow underneath
+when `data/eval_results/calibration/` and `benchmark.json` are present.
 
 Requires `data/processed/sequences.parquet` to already exist (steps 1-2
 above) -- the dashboard fits the encoder + classifier + fallback once at
