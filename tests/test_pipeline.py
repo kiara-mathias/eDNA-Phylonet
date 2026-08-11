@@ -104,6 +104,8 @@ class TestLoadPipelineAndClassify:
 
         assert prediction.predicted_rank in _RANKS
         assert prediction.closest_relative_species is not None
+        assert prediction.nearest_species
+        assert prediction.nearest_species[0].label == prediction.closest_relative_species
 
     def test_classify_accepts_optional_latlon(self, tmp_path):
         df = _synthetic_sequences_df()
@@ -119,3 +121,5 @@ class TestLoadPipelineAndClassify:
 
         assert prediction.predicted_rank in _RANKS or prediction.predicted_rank is None
         assert prediction.closest_relative_species is not None
+        assert prediction.nearest_species
+        assert prediction.nearest_species[0].label == prediction.closest_relative_species

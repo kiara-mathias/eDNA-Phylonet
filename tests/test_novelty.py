@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from src.fallback.novelty import HierarchicalFallback
+from src.fallback.novelty import HierarchicalFallback, NeighborHit
 
 
 def _rows(species, genus, family, order, points):
@@ -120,6 +120,11 @@ def test_query_far_from_everything_is_flagged_novel_but_reports_closest_relative
     # Even when fully novel, a "closest relative" is always reported.
     assert predictions[0].closest_relative_species in ("A a", "B b")
     assert predictions[0].species is None
+    assert predictions[0].nearest_species[0].label == predictions[0].closest_relative_species
+    species_labels = {hit.label for hit in predictions[0].nearest_species}
+    assert species_labels == {"A a", "B b"}
+    genera_labels = {hit.label for hit in predictions[0].nearest_genera}
+    assert genera_labels == {"A", "B"}
 
 
 def test_calibrated_thresholds_are_positive_for_every_rank():
@@ -162,6 +167,80 @@ def test_predict_before_calibrate_raises():
         fb.predict(np.array([[0.0, 0.0]]))
 
 
+def test_n_nearest_relatives_must_be_at_least_one():
+    with pytest.raises(ValueError, match="n_nearest_relatives"):
+        HierarchicalFallback(n_nearest_relatives=0)
+
+
+def test_novel_query_returns_top_k_species_and_genera_in_distance_order():
+    # Five species on a line, two genera. Query sits left of the first
+    # centroid so nearest-species order is A, B, C, D, E.
+    train_points = {
+        "A a": [(-0.1, 0.0), (0.0, 0.0), (0.1, 0.0)],
+        "B b": [(0.9, 0.0), (1.0, 0.0), (1.1, 0.0)],
+        "C c": [(1.9, 0.0), (2.0, 0.0), (2.1, 0.0)],
+        "D d": [(3.9, 0.0), (4.0, 0.0), (4.1, 0.0)],
+        "E e": [(7.9, 0.0), (8.0, 0.0), (8.1, 0.0)],
+    }
+    taxonomy = {
+        "A a": ("Near", "FA", "OA"),
+        "B b": ("Near", "FA", "OA"),
+        "C c": ("Near", "FA", "OA"),
+        "D d": ("Far", "FB", "OB"),
+        "E e": ("Far", "FB", "OB"),
+    }
+    train_rows = []
+    train_embeddings = []
+    for species, points in train_points.items():
+        genus, family, order = taxonomy[species]
+        train_rows.extend(_rows(species, genus, family, order, points))
+        train_embeddings.extend(points)
+    train_df = pd.DataFrame(train_rows)
+    train_embeddings = np.array(train_embeddings)
+    val_df = train_df.copy()
+    val_embeddings = train_embeddings.copy()
+
+    fb = HierarchicalFallback(
+        seq_weight=1.0,
+        geo_weight=0.0,
+        rank_percentile=90.0,
+        sample_count_prior=0.0,
+        n_nearest_relatives=5,
+    )
+    fb.fit(train_embeddings, train_df)
+    fb.calibrate(val_embeddings, val_df, latlon=None)
+
+    pred = fb.predict(np.array([[-100.0, 0.0]]), latlon=None)[0]
+
+    assert pred.is_novel is True
+    assert [hit.label for hit in pred.nearest_species] == ["A a", "B b", "C c", "D d", "E e"]
+    species_dists = [hit.distance for hit in pred.nearest_species]
+    assert species_dists == sorted(species_dists)
+    assert all(isinstance(hit, NeighborHit) for hit in pred.nearest_species)
+    assert pred.nearest_species[0].genus == "Near"
+    assert pred.nearest_species[-1].genus == "Far"
+    assert pred.closest_relative_species == "A a"
+
+    assert [hit.label for hit in pred.nearest_genera] == ["Near", "Far"]
+    genera_dists = [hit.distance for hit in pred.nearest_genera]
+    assert genera_dists == sorted(genera_dists)
+    assert pred.nearest_genera[0].family == "FA"
+
+
+def test_n_nearest_relatives_truncates_and_caps_at_available_labels():
+    fb = _fitted_calibrated()
+    fb.n_nearest_relatives = 1
+    pred = fb.predict(np.array([[0.0, 0.0]]), latlon=None)[0]
+    assert len(pred.nearest_species) == 1
+    assert len(pred.nearest_genera) == 1
+    assert pred.nearest_species[0].label == "A a"
+
+    fb.n_nearest_relatives = 99
+    pred = fb.predict(np.array([[0.0, 0.0]]), latlon=None)[0]
+    assert len(pred.nearest_species) == 2
+    assert len(pred.nearest_genera) == 2
+
+
 def test_distance_dict_covers_all_ranks():
     fb = _fitted_calibrated()
 
@@ -170,18 +249,4 @@ def test_distance_dict_covers_all_ranks():
     assert set(predictions[0].distance.keys()) == {"species", "genus", "family", "order"}
     assert set(predictions[0].confidence.keys()) == {"species", "genus", "family", "order"}
     assert set(predictions[0].support.keys()) == {"species", "genus", "family", "order"}
-    assert set(predictions[0].nearest.keys()) == {"species", "genus", "family", "order"}
     assert all(n >= 1 for n in predictions[0].support.values())
-    assert predictions[0].nearest["species"] == "A a"
-
-
-def test_probability_calibrator_remaps_reported_confidence():
-    fb = _fitted_calibrated(sample_count_prior=0.0)
-    # Constant map -> 0.25 regardless of raw distance confidence.
-    class _Const:
-        def predict(self, values):
-            return [0.25 for _ in values]
-
-    fb.set_probability_calibrators({rank: _Const() for rank in ("species", "genus", "family", "order")})
-    predictions = fb.predict(np.array([[0.0, 0.0]]), latlon=None)
-    assert predictions[0].confidence["species"] == pytest.approx(0.25, abs=1e-9)
