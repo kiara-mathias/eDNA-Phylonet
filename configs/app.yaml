@@ -38,3 +38,12 @@ fallback:
 # this to render the Step 6 comparison results (shows a "run benchmark
 # first" message if missing).
 benchmark_results_path: data/eval_results/benchmark.json
+
+# Written by src/eval/validate_calibration.py (Step 1). Dashboard Calibration
+# tab renders the reliability diagram live from this JSON (and optionally
+# rebins heldout_predictions.parquet when that file is present).
+calibration_results_path: data/eval_results/calibration/calibration.json
+
+# Written by src/eval/head_to_head.py (Step 2). Dashboard FCW tab plots the
+# saved false-confident-wrong curves with method toggles + a threshold slider.
+head_to_head_results_path: data/eval_results/head_to_head/head_to_head.json

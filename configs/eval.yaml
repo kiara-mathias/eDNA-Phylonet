@@ -58,6 +58,32 @@ benchmark:
   ci_level: 0.95
   seed: 42
 
+calibration:
+  # Equal-width bins on [0, 1] for reliability diagrams / ECE.
+  n_bins: 10
+  # If any rank's held-out ECE exceeds this, fit a post-hoc map from raw
+  # confidence -> P(correct) via leave-one-holdout-out on the other holdouts'
+  # test predictions (in-distribution val does not transfer to zero-shot).
+  ece_threshold: 0.1
+  # "isotonic" (nonparametric, default) or "platt" (logistic / Platt scaling).
+  method: isotonic
+  auto_recalibrate: true
+  output_dir: data/eval_results/calibration
+
+head_to_head:
+  # Operating-point threshold for the table's false-confident-wrong-call
+  # rate. The dashboard slider sweeps [0, 1] against the saved curve.
+  default_confidence_threshold: 0.5
+  # Which saved split becomes the single published table + plot.
+  table_holdout_fraction: 0.5
+  plot_rank: species
+  plot_subset: novel
+  n_thresholds: 21
+  output_dir: data/eval_results/head_to_head
+  # BLAST confidence proxy: bitscore / (bitscore + offset). Smaller offset
+  # makes modest hits look more confident.
+  blast_bitscore_offset: 50.0
+
 baselines:
   naive_bayes:
     # k-mer size for the raw frequency vectors fed to MultinomialNB (mirrors
