@@ -93,6 +93,7 @@ def load_pipeline(config: dict[str, Any]) -> Pipeline:
         seq_weight=classifier_cfg["seq_weight"],
         geo_weight=classifier_cfg["geo_weight"],
         rank_percentile=fallback_cfg["rank_percentile"],
+        sample_count_prior=float(fallback_cfg.get("sample_count_prior", 5.0)),
     )
     fallback.fit(train_embeddings, train_df)
 

@@ -72,6 +72,15 @@ def _escape_dot_label(text: str) -> str:
     return text.replace("\\", "\\\\").replace('"', '\\"')
 
 
+def _format_metric_with_ci(value: float | None, ci: list | None) -> str | None:
+    if value is None:
+        return None
+    text = f"{value:.3f}"
+    if ci and len(ci) == 2 and ci[0] is not None and ci[1] is not None:
+        text += f" [{ci[0]:.3f}-{ci[1]:.3f}]"
+    return text
+
+
 def _build_taxonomy_tree_dot(prediction: FallbackPrediction) -> str:
     """Renders the order->family->genus->species cascade as a DOT graph.
 
@@ -178,15 +187,23 @@ def _render_classify_tab(pipeline: Pipeline) -> None:
                 "Rank": [r.capitalize() for r in _RANKS],
                 "Confidence": [prediction.confidence[r] * 100 for r in _RANKS],
                 "Distance": [prediction.distance[r] for r in _RANKS],
+                "Support (n)": [prediction.support[r] for r in _RANKS],
             }
         )
         st.dataframe(
             confidence_df,
             column_config={
                 "Confidence": st.column_config.ProgressColumn(
-                    "Confidence", min_value=0.0, max_value=100.0, format="%.0f%%"
+                    "Confidence",
+                    help="Distance confidence × n/(n+prior); thinly sampled centroids are deflated.",
+                    min_value=0.0,
+                    max_value=100.0,
+                    format="%.0f%%",
                 ),
                 "Distance": st.column_config.NumberColumn("Distance (scaled)", format="%.3f"),
+                "Support (n)": st.column_config.NumberColumn(
+                    "Support (n)", help="Training rows backing the nearest label at this rank."
+                ),
             },
             hide_index=True,
             width="stretch",
@@ -221,11 +238,17 @@ def _render_benchmark_tab(benchmark_results_path: str) -> None:
                 continue
             row = {"system": system_name}
             for rank in _RANKS:
-                row[f"{rank}_coverage"] = scores[rank]["coverage"]
-                row[f"{rank}_accuracy"] = scores[rank]["accuracy_among_answered"]
+                row[f"{rank}_coverage"] = _format_metric_with_ci(
+                    scores[rank].get("coverage"), scores[rank].get("coverage_ci")
+                )
+                row[f"{rank}_accuracy"] = _format_metric_with_ci(
+                    scores[rank].get("accuracy_among_answered"),
+                    scores[rank].get("accuracy_among_answered_ci"),
+                )
             rows.append(row)
 
         st.dataframe(pd.DataFrame(rows).set_index("system"), width="stretch")
+        st.caption("Values are point estimate [bootstrap CI] when CIs are present in benchmark.json.")
 
         accuracy_by_rank = pd.DataFrame(
             {

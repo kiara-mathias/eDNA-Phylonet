@@ -42,6 +42,18 @@ fallback:
   # less sensitive to genuinely novel ones). Reuses classifier.seq_weight /
   # classifier.geo_weight for the underlying distance combination.
   rank_percentile: 90.0
+  # Pseudocount for sample-size reliability: reported confidence is multiplied
+  # by n / (n + prior) for the nearest label's training support. Cascade commit
+  # decisions still use raw distance vs. threshold; this only makes confidence
+  # honest for thinly sampled centroids. Set 0 to disable.
+  sample_count_prior: 5.0
+
+benchmark:
+  # Resample the test set with replacement this many times per system/rank
+  # to produce percentile CIs around coverage and accuracy-among-answered.
+  n_bootstrap: 1000
+  ci_level: 0.95
+  seed: 42
 
 baselines:
   naive_bayes:

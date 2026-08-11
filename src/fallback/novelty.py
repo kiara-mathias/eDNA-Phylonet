@@ -27,6 +27,13 @@ rank ends up with its own independent scale/unit ("how many typical
 between-class gaps away is this query"), so thresholds are *not* forced
 monotonic across ranks -- that would incorrectly assume the raw values
 share a common unit, which they don't.
+
+Note on sample-count reliability: cascade *commit* decisions still use
+raw distance vs. the calibrated threshold (so novelty detection stays
+calibrated against in-distribution distances). Reported ``confidence``
+is then deflated by ``n / (n + sample_count_prior)`` for the nearest
+label's training support, so a singleton centroid cannot look as
+trustworthy as a well-sampled one at the same distance.
 """
 
 from __future__ import annotations
@@ -51,6 +58,8 @@ class FallbackPrediction:
     fields at or below the unresolved rank are ``None``; fields above the
     resolved rank are still filled in via the training taxonomy (e.g. a
     genus-level call still fills in family/order).
+    ``support`` is the training-sample count of the nearest label at each
+    rank (used to deflate ``confidence`` for thinly sampled centroids).
     """
 
     predicted_rank: str | None
@@ -62,6 +71,7 @@ class FallbackPrediction:
     order: str | None
     confidence: dict[str, float]
     distance: dict[str, float]
+    support: dict[str, int]
 
 
 @dataclass
@@ -71,6 +81,7 @@ class _RankCentroidSet:
     geo_centroids: np.ndarray  # (n_labels, 2), NaN rows where unavailable
     seq_scale: float  # fixed normalization divisor: median pairwise seq-centroid distance
     geo_scale: float | None  # fixed normalization divisor (km); None if <2 geo centroids at this rank
+    n_samples: np.ndarray  # (n_labels,) training rows backing each centroid
 
 
 def _median_pairwise_distance(points: np.ndarray) -> float | None:
@@ -103,17 +114,30 @@ class HierarchicalFallback:
     ``predict(embeddings, latlon)``.
     """
 
-    def __init__(self, seq_weight: float = 0.8, geo_weight: float = 0.2, rank_percentile: float = 90.0) -> None:
+    def __init__(
+        self,
+        seq_weight: float = 0.8,
+        geo_weight: float = 0.2,
+        rank_percentile: float = 90.0,
+        sample_count_prior: float = 5.0,
+    ) -> None:
         total = seq_weight + geo_weight
         self.seq_weight = seq_weight / total
         self.geo_weight = geo_weight / total
         self.rank_percentile = rank_percentile
+        if sample_count_prior < 0:
+            raise ValueError("sample_count_prior must be >= 0")
+        self.sample_count_prior = float(sample_count_prior)
 
         self._rank_centroids: dict[str, _RankCentroidSet] = {}
         self._species_taxonomy: dict[str, tuple[str, str, str]] = {}
         self._genus_taxonomy: dict[str, tuple[str, str]] = {}
         self._family_taxonomy: dict[str, str] = {}
         self.thresholds_: dict[str, float] | None = None
+
+    def _reliability(self, n_samples: int) -> float:
+        """Bayesian-style shrinkage of confidence toward 0 for low-n centroids."""
+        return float(n_samples) / (float(n_samples) + self.sample_count_prior)
 
     def fit(self, embeddings: np.ndarray, train_df: pd.DataFrame) -> "HierarchicalFallback":
         if len(train_df) != len(embeddings):
@@ -126,9 +150,11 @@ class HierarchicalFallback:
             labels = sorted(df[rank].unique())
             seq_centroids = np.zeros((len(labels), embeddings.shape[1]), dtype=np.float64)
             geo_centroids = np.full((len(labels), 2), np.nan, dtype=np.float64)
+            n_samples = np.zeros(len(labels), dtype=np.int64)
 
             for i, label in enumerate(labels):
                 mask = (df[rank] == label).to_numpy()
+                n_samples[i] = int(mask.sum())
                 seq_centroids[i] = embeddings[mask].mean(axis=0)
 
                 if has_geo:
@@ -143,7 +169,9 @@ class HierarchicalFallback:
             if geo_scale is not None:
                 geo_scale = max(geo_scale, 1e-9)
 
-            self._rank_centroids[rank] = _RankCentroidSet(labels, seq_centroids, geo_centroids, seq_scale, geo_scale)
+            self._rank_centroids[rank] = _RankCentroidSet(
+                labels, seq_centroids, geo_centroids, seq_scale, geo_scale, n_samples
+            )
 
         for _, row in df.drop_duplicates(subset=["species"]).iterrows():
             self._species_taxonomy[row["species"]] = (row["genus"], row["family"], row["order"])
@@ -156,7 +184,7 @@ class HierarchicalFallback:
 
     def _nearest_at_rank(
         self, rank: str, embedding: np.ndarray, latlon_row: np.ndarray | None
-    ) -> tuple[str, float]:
+    ) -> tuple[str, float, int]:
         centroids = self._rank_centroids[rank]
 
         seq_dist = np.linalg.norm(centroids.seq_centroids - embedding, axis=1)
@@ -176,7 +204,7 @@ class HierarchicalFallback:
                 combined[geo_mask] = self.seq_weight * seq_scaled[geo_mask] + self.geo_weight * geo_scaled
 
         best_idx = int(np.argmin(combined))
-        return centroids.labels[best_idx], float(combined[best_idx])
+        return centroids.labels[best_idx], float(combined[best_idx]), int(centroids.n_samples[best_idx])
 
     def calibrate(
         self,
@@ -200,7 +228,7 @@ class HierarchicalFallback:
         for q in range(n):
             latlon_row = latlon[q] if latlon is not None else None
             for rank in _RANKS:
-                _, dist = self._nearest_at_rank(rank, embeddings[q], latlon_row)
+                _, dist, _ = self._nearest_at_rank(rank, embeddings[q], latlon_row)
                 distances_per_rank[rank].append(dist)
 
         # Each rank's distances are already scaled by that rank's own
@@ -228,7 +256,7 @@ class HierarchicalFallback:
         for q in range(len(embeddings)):
             latlon_row = latlon[q] if latlon is not None else None
 
-            nearest: dict[str, tuple[str, float]] = {
+            nearest: dict[str, tuple[str, float, int]] = {
                 rank: self._nearest_at_rank(rank, embeddings[q], latlon_row) for rank in _RANKS
             }
 
@@ -239,13 +267,19 @@ class HierarchicalFallback:
                     break
 
             confidence: dict[str, float] = {}
+            support: dict[str, int] = {}
             for rank in _RANKS:
                 threshold = self.thresholds_[rank]
                 dist = nearest[rank][1]
+                n_support = nearest[rank][2]
+                support[rank] = n_support
                 if threshold <= 1e-12:
-                    confidence[rank] = 1.0 if dist <= 1e-12 else 0.0
+                    distance_confidence = 1.0 if dist <= 1e-12 else 0.0
                 else:
-                    confidence[rank] = float(np.clip(1.0 - dist / threshold, 0.0, 1.0))
+                    distance_confidence = float(np.clip(1.0 - dist / threshold, 0.0, 1.0))
+                # Deflate by sample-count reliability so thinly backed centroids
+                # cannot report the same confidence as well-sampled ones.
+                confidence[rank] = float(distance_confidence * self._reliability(n_support))
 
             species = genus = family = order = None
             if predicted_rank == "species":
@@ -271,6 +305,7 @@ class HierarchicalFallback:
                     order=order,
                     confidence=confidence,
                     distance={rank: nearest[rank][1] for rank in _RANKS},
+                    support=support,
                 )
             )
 

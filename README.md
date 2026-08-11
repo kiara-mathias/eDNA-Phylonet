@@ -159,9 +159,18 @@ the exact failure mode this project's fallback exists to avoid. At
 family/order, our system's accuracy-among-answered (~0.71-0.84) beats
 Naive Bayes (~0.10-0.16) and is comparable to the 1-NN ablation, showing
 where the phylogeny/geo reasoning helps vs. where the embedding itself is
-doing the work. The BLAST row requires `blastn`/`makeblastdb` on `PATH`
-(installed in Docker/CI; not required for local development, skipped with
-a logged warning if absent -- see `src/baselines/blast_baseline.py`).
+doing the work. Each coverage/accuracy figure is also reported with a
+bootstrap percentile CI (see `benchmark.n_bootstrap` / `benchmark.ci_level`
+in [`configs/eval.yaml`](configs/eval.yaml)). The BLAST row requires
+`blastn`/`makeblastdb` on `PATH` (installed in Docker/CI; not required for
+local development, skipped with a logged warning if absent -- see
+`src/baselines/blast_baseline.py`).
+
+Reported confidence in the fallback (and dashboard) is distance-based
+confidence multiplied by sample-count reliability
+`n / (n + sample_count_prior)`, so thinly sampled centroids cannot look as
+trustworthy as well-backed ones at the same distance. Cascade commit
+decisions still use raw distance vs. the calibrated threshold.
 
 ## Dashboard
 

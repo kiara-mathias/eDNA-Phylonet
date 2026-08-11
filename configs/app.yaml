@@ -26,6 +26,9 @@ classifier:
 
 fallback:
   rank_percentile: 90.0
+  # Must match configs/eval.yaml so dashboard confidence matches the
+  # benchmarked HierarchicalFallback (see sample_count_prior there).
+  sample_count_prior: 5.0
 
 # Written by src/eval/benchmark.py; the dashboard's Benchmark tab reads
 # this to render the Step 6 comparison results (shows a "run benchmark

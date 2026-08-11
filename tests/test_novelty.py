@@ -35,9 +35,18 @@ def _train_and_val():
     return train_df, train_embeddings, val_df, val_embeddings
 
 
-def _fitted_calibrated(rank_percentile: float = 90.0) -> HierarchicalFallback:
+def _fitted_calibrated(
+    rank_percentile: float = 90.0, sample_count_prior: float = 0.0
+) -> HierarchicalFallback:
+    # Default prior=0 keeps distance-only confidence behavior for the
+    # original suite; sample-count deflation is covered by dedicated tests.
     train_df, train_embeddings, val_df, val_embeddings = _train_and_val()
-    fb = HierarchicalFallback(seq_weight=1.0, geo_weight=0.0, rank_percentile=rank_percentile)
+    fb = HierarchicalFallback(
+        seq_weight=1.0,
+        geo_weight=0.0,
+        rank_percentile=rank_percentile,
+        sample_count_prior=sample_count_prior,
+    )
     fb.fit(train_embeddings, train_df)
     fb.calibrate(val_embeddings, val_df, latlon=None)
     return fb
@@ -61,7 +70,7 @@ def test_query_near_known_centroid_gets_confident_species_call():
 
 def test_query_exactly_at_centroid_gets_confidence_one():
     train_df, train_embeddings, val_df, val_embeddings = _train_and_val()
-    fb = HierarchicalFallback(seq_weight=1.0, geo_weight=0.0)
+    fb = HierarchicalFallback(seq_weight=1.0, geo_weight=0.0, sample_count_prior=0.0)
     fb.fit(train_embeddings, train_df)
     fb.calibrate(val_embeddings, val_df, latlon=None)
 
@@ -71,6 +80,34 @@ def test_query_exactly_at_centroid_gets_confidence_one():
     predictions = fb.predict(np.array([centroid_a]), latlon=None)
 
     assert predictions[0].confidence["species"] == pytest.approx(1.0, abs=1e-9)
+
+
+def test_low_sample_count_deflates_confidence_vs_well_sampled_class():
+    # Same geometry, unequal support: singleton vs many-sample centroid.
+    # At each class's own centroid (distance confidence = 1), reported
+    # confidence should equal n/(n+prior).
+    prior = 5.0
+    train_points_a = [(0.0, 0.0)] * 10
+    train_points_b = [(10.0, 10.0)]
+    train_df = pd.DataFrame(
+        _rows("A a", "A", "FA", "OA", train_points_a) + _rows("B b", "B", "FB", "OB", train_points_b)
+    )
+    train_embeddings = np.array(train_points_a + train_points_b)
+    val_df = train_df.copy()
+    val_embeddings = train_embeddings.copy()
+
+    fb = HierarchicalFallback(seq_weight=1.0, geo_weight=0.0, sample_count_prior=prior)
+    fb.fit(train_embeddings, train_df)
+    fb.calibrate(val_embeddings, val_df, latlon=None)
+
+    pred_a = fb.predict(np.array([[0.0, 0.0]]), latlon=None)[0]
+    pred_b = fb.predict(np.array([[10.0, 10.0]]), latlon=None)[0]
+
+    assert pred_a.support["species"] == 10
+    assert pred_b.support["species"] == 1
+    assert pred_a.confidence["species"] == pytest.approx(10.0 / (10.0 + prior), abs=1e-9)
+    assert pred_b.confidence["species"] == pytest.approx(1.0 / (1.0 + prior), abs=1e-9)
+    assert pred_b.confidence["species"] < pred_a.confidence["species"]
 
 
 def test_query_far_from_everything_is_flagged_novel_but_reports_closest_relative():
@@ -132,3 +169,5 @@ def test_distance_dict_covers_all_ranks():
 
     assert set(predictions[0].distance.keys()) == {"species", "genus", "family", "order"}
     assert set(predictions[0].confidence.keys()) == {"species", "genus", "family", "order"}
+    assert set(predictions[0].support.keys()) == {"species", "genus", "family", "order"}
+    assert all(n >= 1 for n in predictions[0].support.values())
