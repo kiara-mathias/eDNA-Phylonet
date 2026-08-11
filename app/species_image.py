@@ -179,6 +179,17 @@ def get_species_image(scientific_name: str) -> SpeciesImage | None:
     return lookup_species_image(scientific_name)
 
 
+def photo_html_for_name(scientific_name: str) -> str:
+    """``<img>`` when the APIs return a still; otherwise the silhouette placeholder."""
+    image = get_species_image(scientific_name) if scientific_name.strip() else None
+    if image is None:
+        return PLACEHOLDER_SVG
+    return (
+        f'<img src="{html.escape(image.url, quote=True)}" '
+        f'alt="{html.escape(image.scientific_name)}" />'
+    )
+
+
 def render_reference_photo(prediction: FallbackPrediction) -> None:
     name = reference_taxon_name(prediction)
     image = get_species_image(name) if name else None

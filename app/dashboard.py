@@ -26,6 +26,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # allow `streamlit
 from app.dashboard_charts import (  # noqa: E402
     benchmark_bar_frame,
     build_benchmark_bar_figure,
+    build_reliability_figure,
     fcw_at_threshold,
     fcw_callout_row,
     fcw_curve_frame,
@@ -41,8 +42,8 @@ from app.depth_tree import (  # noqa: E402,F401
     render_depth_tree,
 )
 from app.family_icons import result_callout_html  # noqa: E402
-from app.species_image import render_reference_photo  # noqa: E402
-from app.gallery_examples import BLAST_LIE_EXAMPLES, BlastLieExample  # noqa: E402
+from app.species_image import photo_html_for_name, render_reference_photo  # noqa: E402
+from app.gallery_examples import BLAST_LIE_EXAMPLES, BlastLieExample, lie_card_html  # noqa: E402
 from app.pipeline import (  # noqa: E402
     Pipeline,
     SequenceParseError,
@@ -54,7 +55,7 @@ from app.pipeline import (  # noqa: E402
 from src.common import resolve_path  # noqa: E402
 from src.fallback.novelty import FallbackPrediction, NeighborHit  # noqa: E402
 from theme.inject import inject_theme  # noqa: E402
-from theme.tokens import CORAL, NAVY, RANK_BAND, SAND, SEAFOAM, TEAL  # noqa: E402
+from theme.tokens import CORAL, NAVY, SAND, SEAFOAM, TEAL  # noqa: E402
 
 _RANKS = ("species", "genus", "family", "order")
 _TAB_LABELS = ("Identify", "Evidence", "Method")
@@ -125,34 +126,6 @@ def reliability_reports(summary: dict[str, Any]) -> list[dict[str, Any]]:
     recalibrated = summary.get("recalibrated") or {}
     reports = recalibrated.get("reports") or (summary.get("raw") or {}).get("reports") or []
     return [r for r in reports if r.get("rank") in _RANKS]
-
-
-def draw_reliability_chart(frame: pd.DataFrame):
-    fig, ax = plt.subplots(figsize=(5.2, 4.4), facecolor=SAND)
-    ax.set_facecolor(SAND)
-    ax.plot([0, 1], [0, 1], linestyle="--", color=NAVY, linewidth=1.0, alpha=0.35, label="perfect")
-    for rank, group in frame.groupby("rank", sort=False):
-        ece = group["ece"].iloc[0] if "ece" in group.columns else float("nan")
-        label = f"{rank}" + (f"  ECE {ece:.3f}" if np.isfinite(ece) else "")
-        ax.plot(
-            group["mean_confidence"],
-            group["accuracy"],
-            marker="o",
-            linewidth=1.8,
-            color=RANK_BAND.get(str(rank), TEAL),
-            label=label,
-        )
-    ax.set_xlim(0.0, 1.0)
-    ax.set_ylim(0.0, 1.0)
-    ax.set_xlabel("Predicted confidence (bin mean)")
-    ax.set_ylabel("Observed accuracy")
-    ax.set_title("Reliability by taxonomic rank")
-    ax.legend(loc="lower right", frameon=False, fontsize=8)
-    for spine in ax.spines.values():
-        spine.set_color(NAVY)
-        spine.set_alpha(0.25)
-    fig.tight_layout()
-    return fig
 
 
 def draw_fcw_chart(curve_df: pd.DataFrame):
@@ -302,9 +275,12 @@ def _render_calibration(config: dict[str, Any]) -> None:
         "Each rank uses the same depth color as the tree. Source: held-out genera.</p>",
         unsafe_allow_html=True,
     )
-    fig = draw_reliability_chart(frame)
-    st.pyplot(fig, width="stretch")
-    plt.close(fig)
+    fig = build_reliability_figure(frame)
+    st.plotly_chart(
+        fig,
+        width="stretch",
+        config={"displaylogo": False, "modeBarButtonsToRemove": ["lasso2d", "select2d"]},
+    )
 
 
 def _render_blast_gallery() -> None:
@@ -315,24 +291,17 @@ def _render_blast_gallery() -> None:
         "We flagged novelty and listed nearest known relatives instead.</p>",
         unsafe_allow_html=True,
     )
-    for example in BLAST_LIE_EXAMPLES:
-        _render_lie_example(example)
+    for row_start in range(0, len(BLAST_LIE_EXAMPLES), 2):
+        cols = st.columns(2, gap="medium")
+        chunk = BLAST_LIE_EXAMPLES[row_start : row_start + 2]
+        for col, example in zip(cols, chunk):
+            with col:
+                _render_lie_example(example)
 
 
 def _render_lie_example(example: BlastLieExample) -> None:
-    rank = example.ours_predicted_rank or "unresolved"
-    with st.expander(f"{example.true_species}  ·  BLAST named {example.blast_species}"):
-        st.markdown(
-            f'<div class="coral-flag">wrong species call</div>'
-            f'<div class="name">{html.escape(example.blast_species)}</div>'
-            f'<div class="mono-quiet">{example.blast_pident:.1f}% identity · '
-            f'bitscore {example.blast_bitscore:.0f}</div>'
-            f'<div class="mono-quiet" style="margin-top:0.4rem">true · '
-            f'{html.escape(example.true_species)}</div>'
-            f'<div class="mono-quiet">ours · {html.escape(str(rank))}</div>'
-            f'<div class="specimen-seq">{html.escape(format_specimen_sequence(example.sequence))}</div>',
-            unsafe_allow_html=True,
-        )
+    photo = photo_html_for_name(example.true_species)
+    st.markdown(lie_card_html(example, photo), unsafe_allow_html=True)
 
 
 def _render_fcw(config: dict[str, Any]) -> None:

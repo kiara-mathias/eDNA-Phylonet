@@ -15,7 +15,7 @@ import pandas as pd
 import plotly.graph_objects as go
 
 from src.eval.calibration import RankCalibrationReport, evaluate_rank_calibration
-from theme.tokens import CORAL, INK, NAVY, SAND, SEAFOAM, TEAL
+from theme.tokens import CORAL, INK, NAVY, RANK_BAND, SAND, SEAFOAM, TEAL
 
 _RANKS = ("species", "genus", "family", "order")
 _METHOD_LABELS = {
@@ -227,6 +227,66 @@ def plotly_theme_layout(**overrides: Any) -> dict[str, Any]:
     )
     layout.update(overrides)
     return layout
+
+
+def build_reliability_figure(frame: pd.DataFrame) -> go.Figure:
+    """Reliability diagram: perfect diagonal + one line per rank (legend-toggle)."""
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter(
+            x=[0, 1],
+            y=[0, 1],
+            mode="lines",
+            name="perfect",
+            line=dict(color=NAVY, width=1.2, dash="dash"),
+            opacity=0.4,
+            hoverinfo="skip",
+        )
+    )
+    if frame.empty:
+        fig.update_layout(**plotly_theme_layout(xaxis=dict(range=[0, 1]), yaxis=dict(range=[0, 1])))
+        return fig
+    for rank in _RANKS:
+        group = frame.loc[frame["rank"] == rank]
+        if group.empty:
+            continue
+        ece = group["ece"].iloc[0] if "ece" in group.columns else float("nan")
+        label = str(rank) + (f"  ECE {ece:.3f}" if np.isfinite(ece) else "")
+        ordered = group.sort_values("mean_confidence")
+        color = RANK_BAND.get(str(rank), TEAL)
+        fig.add_trace(
+            go.Scatter(
+                x=list(ordered["mean_confidence"]),
+                y=list(ordered["accuracy"]),
+                mode="lines+markers",
+                name=label,
+                line=dict(color=color, width=2.2),
+                marker=dict(size=7, color=color),
+                hovertemplate=(
+                    f"{rank}<br>confidence=%{{x:.2f}}<br>accuracy=%{{y:.2f}}<extra></extra>"
+                ),
+            )
+        )
+    fig.update_layout(
+        **plotly_theme_layout(
+            height=440,
+            xaxis=dict(
+                range=[0, 1],
+                title="Predicted confidence (bin mean)",
+                gridcolor="rgba(10,31,46,0.12)",
+                zeroline=False,
+                tickformat=".0%",
+            ),
+            yaxis=dict(
+                range=[0, 1],
+                title="Observed accuracy",
+                gridcolor="rgba(10,31,46,0.12)",
+                zeroline=False,
+                tickformat=".0%",
+            ),
+        )
+    )
+    return fig
 
 
 def build_benchmark_bar_figure(frame: pd.DataFrame) -> go.Figure:
