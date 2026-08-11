@@ -79,10 +79,9 @@ def family_icon_svg(
 def result_callout_html(prediction: FallbackPrediction) -> str:
     """Identify-tab result row: silhouette + resolved/novel copy."""
     family = family_for_icon(prediction)
-    icon = family_icon_svg(family)
     if prediction.is_novel:
         kicker = "Novel taxon"
-        detail = f"closest known relative: {prediction.closest_relative_species}"
+        detail = str(prediction.closest_relative_species)
         kind = "is-novel"
         kicker_color = CORAL
     else:
@@ -90,13 +89,12 @@ def result_callout_html(prediction: FallbackPrediction) -> str:
         detail = str(prediction.species or "—")
         kind = "is-resolved"
         kicker_color = SEAFOAM
-    family_note = html.escape(family) if family else "unresolved family"
+    icon = family_icon_svg(family, width=96)
     return (
         f'<div class="result-callout {kind}">'
         f"{icon}"
         f'<div class="result-copy">'
         f'<div class="result-kicker" style="color:{kicker_color}">{html.escape(kicker)}</div>'
         f'<div class="result-detail">{html.escape(detail)}</div>'
-        f'<div class="mono-quiet">{family_note}</div>'
         f"</div></div>"
     )

@@ -164,10 +164,10 @@ def _render_header(pipeline: Pipeline | None) -> None:
         f"""
         <div class="record-header">
           <p class="record-kicker">eDNA specimen record</p>
-          <h1>Identify this specimen</h1>
-          <p>A ranked answer even when the read is new: species in the shallows,
-          order in the deep. The cascade stops where the distance is no longer
-          trustworthy — instead of guessing wrong.</p>
+          <p class="record-title">Identify this specimen</p>
+          <p class="record-lede">A ranked answer even when the read is new:
+          species in the shallows, order in the deep. The cascade stops where
+          the distance is no longer trustworthy — instead of guessing wrong.</p>
           <div class="record-meta">{html.escape(meta)}</div>
         </div>
         """,
@@ -176,55 +176,61 @@ def _render_header(pipeline: Pipeline | None) -> None:
 
 
 def _render_classify(pipeline: Pipeline) -> FallbackPrediction | None:
-    raw_text = st.text_area(
-        "Sequence",
-        height=120,
-        placeholder=">specimen\nACGTACGT…",
-        label_visibility="collapsed",
-    )
-    col1, col2 = st.columns(2)
-    lat_text = col1.text_input("Latitude (optional)", value="")
-    lon_text = col2.text_input("Longitude (optional)", value="")
+    input_col, stage_col = st.columns([1.1, 0.9], gap="large", vertical_alignment="top")
+    with input_col:
+        raw_text = st.text_area(
+            "Sequence",
+            height=160,
+            placeholder=">specimen\nACGTACGT…",
+            label_visibility="collapsed",
+        )
+        loc1, loc2 = st.columns(2)
+        lat_text = loc1.text_input("Latitude (optional)", value="")
+        lon_text = loc2.text_input("Longitude (optional)", value="")
 
-    # Tabs rerun the script; keep the last call so switching away from
-    # Identify does not wipe the tree.
-    if st.button("Identify this specimen", type="primary"):
-        try:
-            sequence = clean_sequence_text(raw_text)
-        except SequenceParseError as exc:
-            st.error(str(exc))
-        else:
-            lat = float(lat_text) if lat_text.strip() else None
-            lon = float(lon_text) if lon_text.strip() else None
-            if (lat is None) != (lon is None):
-                st.error("Provide both latitude and longitude, or leave both blank.")
+        # Tabs rerun the script; keep the last call so switching away from
+        # Identify does not wipe the tree.
+        if st.button("Identify this specimen", type="primary"):
+            try:
+                sequence = clean_sequence_text(raw_text)
+            except SequenceParseError as exc:
+                st.error(str(exc))
             else:
-                st.session_state[_SEQ_STATE] = sequence
-                st.session_state[_PRED_STATE] = classify_sequence(pipeline, sequence, lat, lon)
+                lat = float(lat_text) if lat_text.strip() else None
+                lon = float(lon_text) if lon_text.strip() else None
+                if (lat is None) != (lon is None):
+                    st.error("Provide both latitude and longitude, or leave both blank.")
+                else:
+                    st.session_state[_SEQ_STATE] = sequence
+                    st.session_state[_PRED_STATE] = classify_sequence(pipeline, sequence, lat, lon)
 
-    prediction = st.session_state.get(_PRED_STATE)
-    sequence = st.session_state.get(_SEQ_STATE)
-    if prediction is None or sequence is None:
-        return None
+        prediction = st.session_state.get(_PRED_STATE)
+        sequence = st.session_state.get(_SEQ_STATE)
+        if prediction is not None and sequence is not None:
+            st.markdown(
+                f'<div class="specimen-seq">{html.escape(format_specimen_sequence(sequence))}</div>',
+                unsafe_allow_html=True,
+            )
+            st.markdown(result_callout_html(prediction), unsafe_allow_html=True)
+            _render_relatives(prediction)
 
-    st.markdown(
-        f'<div class="specimen-seq">{html.escape(format_specimen_sequence(sequence))}</div>',
-        unsafe_allow_html=True,
-    )
-    st.markdown(result_callout_html(prediction), unsafe_allow_html=True)
-    st.markdown(
-        '<p class="panel-kicker">Taxonomic depth</p>'
-        '<p class="panel-lede">Shallow water is a species-level call. '
-        "Each node darker is one rank of fallback. The cascade stops at the "
-        "last trustworthy rank; below that is unresolved water.</p>",
-        unsafe_allow_html=True,
-    )
-    tree_col, photo_col = st.columns([1.35, 0.85], vertical_alignment="top")
-    with tree_col:
-        render_depth_tree(prediction, heading=False)
-    with photo_col:
-        render_reference_photo(prediction)
-    return prediction
+    with stage_col:
+        prediction = st.session_state.get(_PRED_STATE)
+        if prediction is None:
+            st.markdown(
+                '<div class="identify-stage">'
+                '<p class="panel-kicker">Taxonomic depth</p>'
+                '<p class="stage-hint">Paste a sequence. The cascade and '
+                "reference still appear here — species in the shallows, "
+                "order in the deep.</p>"
+                "</div>",
+                unsafe_allow_html=True,
+            )
+        else:
+            render_depth_tree(prediction, heading=False)
+            render_reference_photo(prediction, quiet=True)
+
+    return st.session_state.get(_PRED_STATE)
 
 
 def _render_relatives(prediction: FallbackPrediction) -> None:
@@ -380,7 +386,7 @@ def _render_benchmark_chart(results: list[dict[str, Any]] | None) -> None:
 
 
 def main() -> None:
-    st.set_page_config(page_title="eDNA specimen record", layout="centered")
+    st.set_page_config(page_title="eDNA specimen record", layout="wide")
     inject_theme()
 
     config = load_app_config()
@@ -389,7 +395,6 @@ def main() -> None:
 
     identify_tab, evidence_tab, method_tab = st.tabs(list(_TAB_LABELS))
     with identify_tab:
-        prediction: FallbackPrediction | None = None
         if pipeline is None:
             st.warning(
                 "No reference data found at "
@@ -397,9 +402,7 @@ def main() -> None:
                 "`python -m src.ingest.fetch_bold` and `python -m src.preprocess.clean` first."
             )
         else:
-            prediction = _render_classify(pipeline)
-        if prediction is not None:
-            _render_relatives(prediction)
+            _render_classify(pipeline)
     with evidence_tab:
         _render_calibration(config)
         _render_blast_gallery()

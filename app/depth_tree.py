@@ -19,6 +19,7 @@ from theme.tokens import (
     NAVY,
     RANK_BAND,
     RANK_INK,
+    RANK_LIT,
     RANKS,
     SAND,
     SEAFOAM,
@@ -31,13 +32,13 @@ if TYPE_CHECKING:
 
 _RANK_INDEX = {rank: i for i, rank in enumerate(RANKS)}
 _VIEW_W = 640
-_VIEW_H = 600
+_VIEW_H = 660
 _CX = 320
-_NODE_Y = (56, 156, 256, 356)
-_NODE_H = 64
-_UNRESOLVED_Y = 456
-_UNRESOLVED_H = 108
-_MAX_TAXON_CHARS = 32
+_NODE_Y = (44, 158, 272, 386)
+_NODE_H = 80
+_UNRESOLVED_Y = 510
+_UNRESOLVED_H = 112
+_MAX_TAXON_CHARS = 28
 
 
 def rank_visual_state(prediction: FallbackPrediction, rank: str) -> str:
@@ -127,38 +128,56 @@ def build_depth_tree_html(prediction: FallbackPrediction) -> str:
         state = states[i]
         confidence = float(prediction.confidence.get(rank, 0.0))
         taxon = html.escape(_clip_taxon(_taxon_at_rank(prediction, rank)))
-        bg = RANK_BAND[rank]
         fg = RANK_INK[rank]
         delay = i * TREE_REVEAL_MS
         width = widths[i]
         x = _CX - width / 2
         y = _NODE_Y[i]
         opacity = _end_opacity(confidence, state)
-        stroke = f'stroke="{SAND}" stroke-width="2.5"' if state == "committed" else 'stroke="none"'
+        filt = 'filter="url(#node-glow)"' if state == "committed" else 'filter="url(#node-shadow)"'
+        stroke = (
+            f'stroke="{SAND}" stroke-width="1.5"'
+            if state == "committed"
+            else 'stroke="none"'
+        )
         nodes_svg.append(
             f'<g class="node-slot is-{html.escape(state)}" '
             f'style="animation-delay:{delay}ms">'
             f'<g class="node-body" opacity="{opacity:.3f}">'
-            f'<rect x="{x:.1f}" y="{y}" width="{width:.1f}" height="{_NODE_H}" '
-            f'rx="8" fill="{bg}" {stroke}/>'
-            f'<text class="rank-name" x="{x + 14:.1f}" y="{y + 22}" fill="{fg}">'
-            f"{html.escape(rank)}</text>"
-            f'<text class="conf" x="{x + width - 14:.1f}" y="{y + 22}" fill="{fg}" '
-            f'text-anchor="end">{confidence * 100:.0f}%</text>'
-            f'<text class="taxon" x="{x + 14:.1f}" y="{y + 46}" fill="{fg}">{taxon}</text>'
+            f'<rect class="node-plate" x="{x:.1f}" y="{y}" width="{width:.1f}" '
+            f'height="{_NODE_H}" rx="10" fill="url(#fill-{rank})" {stroke} {filt}/>'
+            f'<text class="rank-name" x="{x + 18:.1f}" y="{y + 22}" fill="{fg}" '
+            f'fill-opacity="0.55">{html.escape(rank)}</text>'
+            f'<text class="conf" x="{x + width - 16:.1f}" y="{y + 22}" fill="{fg}" '
+            f'fill-opacity="0.4" text-anchor="end">{confidence * 100:.0f}%</text>'
+            f'<text class="taxon" x="{x + 18:.1f}" y="{y + 52}" fill="{fg}">{taxon}</text>'
             f"</g></g>"
         )
 
     note = html.escape(_abyss_note(prediction))
     unresolved_delay = 4 * TREE_REVEAL_MS
+    rank_fills = "".join(
+        f'<linearGradient id="fill-{rank}" x1="0" y1="0" x2="0" y2="1">'
+        f'<stop offset="0%" stop-color="{RANK_LIT[rank]}"/>'
+        f'<stop offset="100%" stop-color="{RANK_BAND[rank]}"/>'
+        f"</linearGradient>"
+        for rank in RANKS
+    )
     svg = f"""
 <svg class="depth-tree" viewBox="0 0 {_VIEW_W} {_VIEW_H}" role="img"
      aria-label="Taxonomic depth tree">
   <defs>
+    {rank_fills}
     <linearGradient id="abyss-fill" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="{NAVY}" stop-opacity="0.92"/>
+      <stop offset="0%" stop-color="{NAVY}" stop-opacity="0.88"/>
       <stop offset="100%" stop-color="{NAVY}" stop-opacity="1"/>
     </linearGradient>
+    <filter id="node-shadow" x="-12%" y="-18%" width="124%" height="150%">
+      <feDropShadow dx="0" dy="5" stdDeviation="5" flood-color="{NAVY}" flood-opacity="0.28"/>
+    </filter>
+    <filter id="node-glow" x="-18%" y="-24%" width="136%" height="170%">
+      <feDropShadow dx="0" dy="7" stdDeviation="7" flood-color="{SEAFOAM}" flood-opacity="0.42"/>
+    </filter>
   </defs>
   <g class="spine">{"".join(connectors_svg)}</g>
   {"".join(nodes_svg)}
@@ -206,11 +225,16 @@ def build_depth_tree_html(prediction: FallbackPrediction) -> str:
   }}
   .rank-name, .conf, .unresolved-kicker {{
     font-family: {FONT_MONO};
-    font-size: 11px;
-    letter-spacing: 0.14em;
+    font-size: 10px;
+    letter-spacing: 0.16em;
     text-transform: uppercase;
   }}
-  .taxon, .unresolved-note {{
+  .taxon {{
+    font-family: {FONT_SANS};
+    font-size: 18px;
+    font-weight: 600;
+  }}
+  .unresolved-note {{
     font-family: {FONT_SANS};
     font-size: 15px;
     font-weight: 500;

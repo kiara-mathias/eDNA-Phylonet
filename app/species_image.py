@@ -190,20 +190,22 @@ def photo_html_for_name(scientific_name: str) -> str:
     )
 
 
-def render_reference_photo(prediction: FallbackPrediction) -> None:
+def render_reference_photo(prediction: FallbackPrediction, *, quiet: bool = False) -> None:
     name = reference_taxon_name(prediction)
     image = get_species_image(name) if name else None
-    role = "nearest known" if prediction.is_novel and not prediction.species else "reference"
 
-    st.markdown('<p class="panel-kicker">Reference</p>', unsafe_allow_html=True)
+    if not quiet:
+        st.markdown('<p class="panel-kicker">Reference</p>', unsafe_allow_html=True)
     if image is None:
         st.markdown(
-            f'<div class="ref-photo">{PLACEHOLDER_SVG}'
-            f'<p class="mono-quiet">No reference photo</p></div>',
+            f'<div class="ref-photo">{PLACEHOLDER_SVG}</div>',
             unsafe_allow_html=True,
         )
         return
 
     st.image(image.url, width="stretch")
+    if quiet:
+        return
+    role = "nearest known" if prediction.is_novel and not prediction.species else "reference"
     caption = f"{role} · {image.scientific_name} · {image.source} · {image.attribution}"
     st.markdown(f'<p class="mono-quiet">{html.escape(caption)}</p>', unsafe_allow_html=True)

@@ -75,3 +75,7 @@ def test_species_commit_keeps_lower_ranks_in_abyss():
     html = build_depth_tree_html(prediction)
     assert "Gadus morhua" in html
     assert "is-abyss" in html
+    assert "linearGradient" in html
+    assert "feDropShadow" in html
+    assert 'class="taxon"' in html
+    assert "fill-opacity=\"0.4\"" in html

@@ -65,14 +65,14 @@ def _demo_prediction() -> FallbackPrediction:
 
 
 def main() -> None:
-    st.set_page_config(page_title="eDNA theme preview", layout="centered")
+    st.set_page_config(page_title="eDNA theme preview", layout="wide")
     inject_theme()
     st.markdown(
         """
         <div class="record-header">
           <p class="record-kicker">theme preview</p>
-          <h1>Blank page, one input, one button</h1>
-          <p>If this looks like default Streamlit, the CSS did not attach.</p>
+          <p class="record-title">Identify this specimen</p>
+          <p class="record-lede">If this looks like default Streamlit, the CSS did not attach.</p>
         </div>
         """,
         unsafe_allow_html=True,
